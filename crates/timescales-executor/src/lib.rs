@@ -243,4 +243,10 @@ pub mod attestation;
 #[cfg(feature = "mpc-simulation")]
 pub mod mpc;
 pub mod policy;
+#[cfg(feature = "zk")]
+pub mod prover;
 pub mod tee;
+#[cfg(feature = "zk")]
+pub mod verifier;
+#[cfg(feature = "zk")]
+pub mod zk;
