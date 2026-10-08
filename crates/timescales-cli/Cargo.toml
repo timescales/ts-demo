@@ -1,0 +1,47 @@
+[package]
+name = "timescales-cli"
+description = "Research tools: the in-process demo, workload generation, benchmarks, the bounded model checker and examples"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+default-run = "timescales"
+
+[[bin]]
+name = "timescales"
+path = "src/main.rs"
+
+[[bin]]
+name = "timescales-bench"
+path = "src/bin/timescales-bench/main.rs"
+
+[[bin]]
+name = "timescales-formal"
+path = "src/bin/timescales-formal.rs"
+
+[[bench]]
+name = "micro"
+harness = false
+
+[dependencies]
+timescales-auction = { workspace = true, features = ["simulation"] }
+timescales-core = { workspace = true, features = ["poseidon", "simulation"] }
+timescales-executor = { workspace = true, features = ["fault-injection", "mpc-simulation", "sim-platform", "simulation", "zk"] }
+timescales-service = { workspace = true, features = ["simulation"] }
+anyhow.workspace = true
+clap.workspace = true
+cpu-time.workspace = true
+hex.workspace = true
+peak_alloc.workspace = true
+rand.workspace = true
+rand_chacha.workspace = true
+rayon.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time"] }
+
+[dev-dependencies]
+criterion.workspace = true
+
+[lints]
+workspace = true

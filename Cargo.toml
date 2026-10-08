@@ -9,6 +9,7 @@ members = [
     "crates/timescales-node",
     "crates/timescales-enclave",
     "crates/timescales-krc",
+    "crates/timescales-cli",
 ]
 
 [workspace.package]
