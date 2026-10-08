@@ -34,4 +34,6 @@ pub const HEADER_VERSION_ENVELOPE_BOUND: u8 = 2;
 
 pub mod commitment;
 pub mod crypto;
+pub mod identity;
+pub mod intent;
 pub mod merkle;
