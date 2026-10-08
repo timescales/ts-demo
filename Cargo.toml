@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "crates/timescales-core",
+    "crates/timescales-auction",
 ]
 
 [workspace.package]
