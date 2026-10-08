@@ -239,3 +239,5 @@ pub trait ConfidentialExecutor: Send + Sync {
     ) -> impl Future<Output = Result<ExecutionResult, ExecutorError>> + Send;
 }
 
+pub mod attestation;
+pub mod policy;
