@@ -1,0 +1,51 @@
+[package]
+name = "timescales-krc"
+description = "Key-release committee member and dealer"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "timescales-krc"
+path = "src/main.rs"
+
+[features]
+litesvm = ["timescales-chain/litesvm"]
+otlp = ["timescales-service/otlp"]
+sim-platform = ["timescales-executor/sim-platform"]
+test-util = ["timescales-chain/test-util"]
+
+[dependencies]
+timescales-auction.workspace = true
+timescales-chain = { workspace = true, features = ["rpc-client"] }
+timescales-core.workspace = true
+timescales-executor = { workspace = true, features = ["tdx-dcap"] }
+timescales-service.workspace = true
+anyhow.workspace = true
+arc-swap.workspace = true
+axum.workspace = true
+bs58.workspace = true
+clap.workspace = true
+curve25519-dalek.workspace = true
+futures.workspace = true
+governor.workspace = true
+hex.workspace = true
+parking_lot.workspace = true
+prometheus-client.workspace = true
+rand_core.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["fs", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-util.workspace = true
+toml.workspace = true
+tracing.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util", "time"] }
+
+[lints]
+workspace = true
