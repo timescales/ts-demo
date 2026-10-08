@@ -1,0 +1,27 @@
+.wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums slashed-zero;
+  padding-right: var(--space-11);
+}
+
+.unit {
+  position: absolute;
+  right: var(--space-4);
+  color: var(--text-muted);
+  font-size: var(--fs-200);
+  pointer-events: none;
+}
+
+.exact {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums slashed-zero;
+  font-size: var(--fs-200);
+  line-height: var(--lh-200);
+  color: var(--text);
+}

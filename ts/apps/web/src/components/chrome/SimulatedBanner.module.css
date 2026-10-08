@@ -1,0 +1,7 @@
+.link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  color: var(--text);
+  font-weight: 600;
+}

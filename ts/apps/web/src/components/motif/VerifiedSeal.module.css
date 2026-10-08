@@ -1,0 +1,13 @@
+.ring {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+
+.check {
+  fill: none;
+  stroke: var(--buy);
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}

@@ -1,0 +1,16 @@
+.root {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.line {
+  display: block;
+  height: 20px;
+  border-radius: var(--radius-xs);
+  background-color: var(--surface-raised);
+  background-image: var(--slat-pattern);
+}
+
+.line:last-child:not(:first-child) {
+  width: 60%;
+}

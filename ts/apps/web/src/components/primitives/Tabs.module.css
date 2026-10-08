@@ -1,0 +1,33 @@
+.root {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.list {
+  display: flex;
+  gap: var(--space-5);
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+}
+
+.trigger {
+  min-height: max(40px, var(--target-min));
+  padding: 0 var(--space-1);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--fs-300);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.trigger[data-state='active'] {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.panel:focus-visible {
+  outline-offset: 4px;
+}

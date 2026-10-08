@@ -1,0 +1,49 @@
+.group {
+  display: inline-flex;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  flex: 1;
+  min-height: max(32px, var(--target-min));
+  min-width: var(--target-min);
+  padding: 0 var(--space-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--fs-300);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.item:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.item[data-state='on'] {
+  background: var(--surface-raised);
+  border-color: var(--control-border);
+  color: var(--text);
+}
+
+.buy[data-state='on'] {
+  background: var(--buy-bg);
+  border-color: var(--buy);
+  color: var(--buy);
+}
+
+.sell[data-state='on'] {
+  border-color: var(--sell);
+  color: var(--sell);
+}

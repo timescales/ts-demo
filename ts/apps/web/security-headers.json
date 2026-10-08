@@ -1,0 +1,7 @@
+{
+  "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' http://localhost:8080 http://127.0.0.1:8899 ws://127.0.0.1:8900 ws://localhost:*; manifest-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; require-trusted-types-for 'script'; trusted-types timescales",
+  "Referrer-Policy": "no-referrer",
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+  "X-Content-Type-Options": "nosniff",
+  "Cross-Origin-Opener-Policy": "same-origin"
+}

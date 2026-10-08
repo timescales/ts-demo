@@ -1,0 +1,243 @@
+/*
+ * Design tokens: "Ink, brass and louvre".
+ *
+ * Themes are selected on <html>: no attribute or data-theme="dark" is the dark
+ * default, data-theme="light" forces light, and data-theme="system" follows
+ * prefers-color-scheme. data-palette="cvd" swaps buy/sell for the CVD-safe
+ * pair. data-motion="reduce" removes motion like prefers-reduced-motion does.
+ *
+ * tokens.contrast.test.ts parses this file: keep one declaration per line and
+ * keep every colour as #RRGGBB or rgba.
+ */
+
+:root {
+  /* Typography */
+  --font-display: 'Instrument Serif', Georgia, 'Times New Roman', serif;
+  --font-ui: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+
+  --fs-100: 12px;
+  --lh-100: 16px;
+  --fs-200: 13px;
+  --lh-200: 18px;
+  --fs-300: 14px;
+  --lh-300: 20px;
+  --fs-400: 16px;
+  --lh-400: 24px;
+  --fs-500: 20px;
+  --lh-500: 28px;
+  --fs-600: 24px;
+  --lh-600: 32px;
+  --fs-700: 32px;
+  --lh-700: 40px;
+  --fs-800: 48px;
+  --lh-800: 56px;
+  --fs-900: 64px;
+  --lh-900: 68px;
+  --label-tracking: 0.06em;
+
+  /* Spacing (4 px base) */
+  --space-0: 0;
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 8px;
+  --space-4: 12px;
+  --space-5: 16px;
+  --space-6: 20px;
+  --space-7: 24px;
+  --space-8: 32px;
+  --space-9: 40px;
+  --space-10: 48px;
+  --space-11: 64px;
+  --space-12: 80px;
+
+  /* Radii */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --radius-full: 999px;
+
+  /* Elevation: cards sit just above the page, raised surfaces float */
+  --shadow-card: 0 1px 2px rgba(21, 23, 28, 0.06), 0 1px 3px rgba(21, 23, 28, 0.04);
+  --shadow-raised: 0 8px 24px rgba(21, 23, 28, 0.12);
+
+  /* Motion */
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --dur-slow: 240ms;
+  --dur-slat: 420ms;
+  --slat-stagger: 12ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+
+  /* Chrome geometry and focus-not-obscured padding */
+  --topbar-h: 56px;
+  --epochstrip-h: 40px;
+  /* StatusFooter publishes its measured height as --footer-h on <html>;
+     28 px is the nominal one-line height used until then. */
+  --footer-min-h: 28px;
+  --footer-h: var(--footer-min-h);
+  --tabbar-h: 56px;
+  --fab-h: 56px;
+  --drawer-w: 360px;
+  --rail-w: 320px;
+  --ticket-w: 360px;
+  --content-max: 1440px;
+  --target-min: 24px;
+  --chrome-top: calc(var(--topbar-h) + var(--epochstrip-h));
+  --chrome-bottom: calc(var(--footer-h) + var(--space-2));
+
+  /* Focus ring */
+  --focus-width: 2px;
+  --focus-offset: 2px;
+
+  /* Palette switch: the theme blocks below define both pairs */
+  --buy: var(--buy-standard);
+  --sell: var(--sell-standard);
+  --buy-bg: var(--buy-bg-standard);
+
+  /* Louvre slats (private) and the 45-degree plum stripe (simulated) */
+  --slat-pattern: repeating-linear-gradient(180deg, var(--slat) 0 1px, transparent 1px 5px);
+  --sim-pattern: repeating-linear-gradient(135deg, var(--sim-stripe) 0 4px, transparent 4px 8px);
+}
+
+/* Touch layouts: larger targets. The tab bar, footer and the floating
+   "New order" button cover the bottom of the viewport. */
+@media (max-width: 599px) {
+  :root {
+    --target-min: 44px;
+    --chrome-top: calc(var(--topbar-h) + var(--epochstrip-h));
+    --chrome-bottom: calc(var(--tabbar-h) + var(--footer-h) + var(--fab-h) + var(--space-5));
+  }
+}
+
+:root[data-palette='cvd'] {
+  --buy: var(--buy-cvd);
+  --sell: var(--sell-cvd);
+  --buy-bg: var(--buy-bg-cvd);
+}
+
+/* theme: dark */
+:root,
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0b0c10;
+  --surface: #111318;
+  --surface-raised: #181b22;
+  --surface-overlay: #20242d;
+  --line: rgba(237, 232, 221, 0.12);
+  --control-border: #6b7182;
+  --text: #ede8dd;
+  --text-muted: #a39e93;
+  --accent: #d3a657;
+  --on-accent: #0b0c10;
+  --buy-standard: #4ccb9a;
+  --sell-standard: #f27a63;
+  --buy-cvd: #3fb8c9;
+  --sell-cvd: #f0a04b;
+  --info: #93b9aa;
+  --warning: #e9d46a;
+  --danger: #ff7b8a;
+  --simulated: #b9a3c9;
+  --buy-bg-standard: #192d2a;
+  --buy-bg-cvd: #172a31;
+  --accent-bg: #2c2821;
+  --info-bg: #232a2c;
+  --warning-bg: #2f2e23;
+  --danger-bg: #322228;
+  --simulated-bg: #292731;
+  --slat: rgba(237, 232, 221, 0.07);
+  --sim-stripe: rgba(185, 163, 201, 0.12);
+  --backdrop: rgba(11, 12, 16, 0.72);
+  --shadow-overlay: 0 24px 64px rgba(0, 0, 0, 0.5);
+}
+
+/* theme: light */
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f4f1ea;
+  --surface: #fbfaf6;
+  --surface-raised: #ffffff;
+  --surface-overlay: #ffffff;
+  --line: rgba(21, 23, 28, 0.12);
+  --control-border: #85807a;
+  --text: #15171c;
+  --text-muted: #5f5b53;
+  --accent: #80601f;
+  --on-accent: #fbfaf6;
+  --buy-standard: #1b7352;
+  --sell-standard: #ad3a27;
+  --buy-cvd: #0f6e7d;
+  --sell-cvd: #9a5410;
+  --info: #3e6658;
+  --warning: #5e4100;
+  --danger: #a3123f;
+  --simulated: #6a4d80;
+  --buy-bg-standard: #dce7df;
+  --buy-bg-cvd: #dae6e5;
+  --accent-bg: #eae4d8;
+  --info-bg: #e1e5e0;
+  --warning-bg: #e5e0d4;
+  --danger-bg: #efdadc;
+  --simulated-bg: #e7e2e5;
+  --slat: rgba(21, 23, 28, 0.06);
+  --sim-stripe: rgba(106, 77, 128, 0.1);
+  --backdrop: rgba(21, 23, 28, 0.4);
+  --shadow-overlay: 0 24px 64px rgba(21, 23, 28, 0.18);
+}
+
+/* theme: system-light (must equal the light block, the contrast test checks) */
+@media (prefers-color-scheme: light) {
+  :root[data-theme='system'] {
+    color-scheme: light;
+    --bg: #f4f1ea;
+    --surface: #fbfaf6;
+    --surface-raised: #ffffff;
+    --surface-overlay: #ffffff;
+    --line: rgba(21, 23, 28, 0.12);
+    --control-border: #85807a;
+    --text: #15171c;
+    --text-muted: #5f5b53;
+    --accent: #80601f;
+    --on-accent: #fbfaf6;
+    --buy-standard: #1b7352;
+    --sell-standard: #ad3a27;
+    --buy-cvd: #0f6e7d;
+    --sell-cvd: #9a5410;
+    --info: #3e6658;
+    --warning: #5e4100;
+    --danger: #a3123f;
+    --simulated: #6a4d80;
+    --buy-bg-standard: #dce7df;
+    --buy-bg-cvd: #dae6e5;
+    --accent-bg: #eae4d8;
+    --info-bg: #e1e5e0;
+    --warning-bg: #e5e0d4;
+    --danger-bg: #efdadc;
+    --simulated-bg: #e7e2e5;
+    --slat: rgba(21, 23, 28, 0.06);
+    --sim-stripe: rgba(106, 77, 128, 0.1);
+    --backdrop: rgba(21, 23, 28, 0.4);
+    --shadow-overlay: 0 24px 64px rgba(21, 23, 28, 0.18);
+  }
+}
+
+/* Reduced motion: the system preference or the in-app setting. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur-base: 0ms;
+    --dur-slow: 0ms;
+    --dur-slat: 0ms;
+    --slat-stagger: 0ms;
+  }
+}
+
+:root[data-motion='reduce'] {
+  --dur-fast: 0ms;
+  --dur-base: 0ms;
+  --dur-slow: 0ms;
+  --dur-slat: 0ms;
+  --slat-stagger: 0ms;
+}

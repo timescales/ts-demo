@@ -1,0 +1,26 @@
+.button {
+  display: inline-grid;
+  place-items: center;
+  width: max(32px, var(--target-min));
+  height: max(32px, var(--target-min));
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.ghost:hover:not(:disabled) {
+  background: var(--accent-bg);
+}
+
+.secondary {
+  background: var(--surface-raised);
+  border-color: var(--control-border);
+}

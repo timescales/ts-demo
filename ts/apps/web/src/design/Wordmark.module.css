@@ -1,0 +1,15 @@
+.root {
+  color: var(--text);
+  overflow: visible;
+}
+
+.slat {
+  fill: var(--accent);
+}
+
+.word {
+  fill: currentColor;
+  font-family: var(--font-display);
+  font-size: 32px;
+  font-weight: 400;
+}

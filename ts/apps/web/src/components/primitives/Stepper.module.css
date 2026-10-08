@@ -1,0 +1,87 @@
+.list {
+  display: grid;
+  gap: var(--space-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: var(--space-4);
+  align-items: start;
+}
+
+/* The thread joining one marker to the next. */
+.step:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  top: 32px;
+  bottom: calc(-1 * var(--space-5) + 4px);
+  left: 13.5px;
+  width: 1px;
+  background: var(--line);
+}
+
+.marker {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  font-family: var(--font-mono);
+  font-size: var(--fs-100);
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.text {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  padding-top: 2px;
+}
+
+.label {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.detail {
+  font-size: var(--fs-300);
+  line-height: var(--lh-300);
+}
+
+.step[data-status='current'] .marker {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.step[data-status='current'] .label {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.step[data-status='done'] .marker {
+  border-color: var(--buy);
+  background: var(--buy-bg);
+  color: var(--buy);
+}
+
+.step[data-status='done'] .label {
+  color: var(--text);
+}
+
+.step[data-status='error'] .marker {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.step[data-status='error'] .label {
+  color: var(--text);
+}

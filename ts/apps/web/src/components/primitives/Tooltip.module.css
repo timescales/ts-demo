@@ -1,0 +1,12 @@
+.content {
+  max-width: 320px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-overlay);
+  color: var(--text);
+  font-size: var(--fs-200);
+  line-height: var(--lh-200);
+  box-shadow: var(--shadow-overlay);
+  z-index: 50;
+}

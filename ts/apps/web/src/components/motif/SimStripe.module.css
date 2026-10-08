@@ -1,0 +1,11 @@
+.stripe {
+  border: 1px dashed var(--simulated);
+  border-radius: var(--radius-sm);
+  background-color: var(--simulated-bg);
+  background-image: var(--sim-pattern);
+  color: var(--text);
+}
+
+div.stripe {
+  padding: var(--space-4);
+}

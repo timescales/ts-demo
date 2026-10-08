@@ -1,0 +1,51 @@
+{
+  "name": "@timescales/web",
+  "version": "0.1.0",
+  "description": "Timescales trader web app",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:test": "vite build --mode test --outDir dist-test",
+    "preview": "vite preview",
+    "preview:test": "vite preview --mode test --outDir dist-test --port 4174 --strictPort",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "size": "size-limit"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "~5.3.0",
+    "@fontsource/ibm-plex-mono": "~5.3.0",
+    "@fontsource/instrument-serif": "~5.3.0",
+    "@radix-ui/react-popover": "~1.2.0",
+    "@radix-ui/react-tabs": "~1.1.22",
+    "@radix-ui/react-toggle-group": "~1.1.20",
+    "@radix-ui/react-tooltip": "~1.3.0",
+    "@radix-ui/react-visually-hidden": "~1.2.12",
+    "@solana-mobile/wallet-standard-mobile": "~0.6.0",
+    "@tanstack/react-query": "~5.104.1",
+    "@timescales/sdk": "0.1.0",
+    "lucide-react": "~1.52.0",
+    "react": "~19.3.0",
+    "react-dom": "~19.3.0",
+    "react-router": "~8.4.0"
+  },
+  "size-limit": [
+    {
+      "name": "initial JS",
+      "path": "dist/assets/index-*.js",
+      "limit": "250 KB",
+      "gzip": true,
+      "running": false
+    }
+  ]
+}

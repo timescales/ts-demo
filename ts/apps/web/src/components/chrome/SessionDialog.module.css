@@ -1,0 +1,22 @@
+.body {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.status {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+
+.note {
+  color: var(--text-muted);
+  font-size: var(--fs-200);
+  line-height: var(--lh-200);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}

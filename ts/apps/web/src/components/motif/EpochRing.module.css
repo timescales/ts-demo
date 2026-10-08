@@ -1,0 +1,21 @@
+.root {
+  display: inline-block;
+  border-radius: var(--radius-full);
+  background-image: var(--slat-pattern);
+}
+
+.tick {
+  stroke: var(--control-border);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+.elapsed {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+.root[data-warning] .elapsed {
+  stroke: var(--warning);
+}

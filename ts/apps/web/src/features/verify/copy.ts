@@ -1,0 +1,61 @@
+import { brand } from '../../design/brand';
+
+const name = brand.name;
+
+export const verifyCopy = {
+  title: 'Verify',
+  lede: `Check a receipt, an evidence file or an epoch yourself. Everything runs in this browser. Only Solana reads go to your RPC and public epoch data to the ${name} service.`,
+  input: {
+    label: 'Receipt, evidence or epoch',
+    hint: 'Paste an evidence file (JSON), a receipt (base64), or an epoch as market/epoch. You can also choose a file.',
+    file: 'Evidence or receipt file',
+    submit: 'Verify',
+    running: 'Verifying...',
+    empty: 'Paste or choose something to verify first.',
+    unreadable: 'This is not an evidence file, a receipt or a market/epoch.',
+  },
+  report: {
+    title: 'Report',
+    label: 'Verification report',
+    kinds: {
+      exclusion: 'Exclusion evidence',
+      substitution: 'Substitution evidence',
+      terms: 'Terms evidence',
+      refusal: 'Relay refusal',
+      verification_failed: 'Recorded verification failure',
+      receipt: 'Receipt',
+      epoch: 'Epoch',
+    },
+    subject: (market: string, epoch: string) => `Market ${market}, epoch ${epoch}`,
+    detail: 'Technical detail',
+    summaryHolds: 'The evidence holds: every check below passed.',
+    summaryFails: 'The evidence does not hold: at least one check failed.',
+    summaryPending: 'Not every check could be completed, so the evidence is not confirmed.',
+  },
+  checks: {
+    promise: 'The relay signed a promise for this order in this epoch',
+    leavesRoot: 'The committed leaves hash to the batch root in the evidence',
+    chainRoot: 'The batch root and count match the Batch account on Solana',
+    absent: 'The promised order is not among the committed leaves',
+    substituted: "The order's commitment is in the batch with a different envelope",
+    announcement: 'The relay signed the announcement',
+    expectedTerms: 'The announced terms give the expected terms digest',
+    chainTerms: 'The batch on Solana committed different terms',
+    relayIsMarket: "The signing key is this market's relay key",
+    relayOther:
+      "another key than this market's relay key (a key the relay held before a rotation cannot be checked here)",
+    relayUnread: 'no signed relay key to compare',
+    relayNotChecked: (why: string) => `relay key not checked: ${why}`,
+    relayChecking: 'the market is still being verified',
+    relayFailed: 'the market failed verification in this app',
+    relayUnpinned: 'this build does not pin the market',
+    refusal: 'The relay signed this refusal',
+    recorded: (check: string, reason: string) => `${check}: ${reason}`,
+    recordedNote: 'Recorded on the device that saved it. Re-run it with Re-check on the market.',
+    receiptDecodes: 'The receipt decodes (version 1) and its executor signed it',
+    receiptMarket: 'The receipt names a market this app verifies',
+    receiptPosted: 'This receipt is the one posted on Solana',
+  },
+  noRpc: 'No Solana RPC is available to read the chain.',
+  noProgram: 'this build pins no program to derive the Batch account from',
+} as const;

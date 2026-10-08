@@ -1,0 +1,142 @@
+// Privacy copy. Normative: the UI never implies more privacy
+// than the protocol gives.
+import { brand } from '../../design/brand';
+
+const name = brand.name;
+
+export const privacyCopy = {
+  title: 'Who sees what',
+  lede: `What ${name} hides, from whom, and what it does not hide. Values come from this deployment's trust labels. Labels your browser could not verify say so.`,
+  matrix: {
+    caption: 'Who can see each kind of data, by stage of an epoch',
+    summaryCaption: 'Who can see your orders',
+    columns: {
+      data: 'Data',
+      before: 'Before cutoff',
+      clearing: 'Cutoff to clearing',
+      after: 'After clearing',
+      always: 'Always',
+    },
+    rows: {
+      wallet: 'Your wallet address',
+      submitted: 'That you submitted, how many, when, from which IP',
+      contents: 'Side, size, limit, role, duration',
+      resting: 'That an order rests across epochs',
+      isolation: "Roughly where a single order's limit lies",
+      fills: 'Fills (wallet, side, role, size, price)',
+      unfilled: "Unfilled orders' contents",
+      balances: 'Balances, deposits, withdrawals',
+    },
+    cells: {
+      relayViaSession: 'Relay operator (via session)',
+      relay: 'Relay operator',
+      publicIfFilled: 'Public if filled',
+      publicAccount: `Public: this wallet has a ${name} account, deposits, withdrawals`,
+      youOnly: 'You only',
+      plusDealer: 'plus the key dealer',
+      plusCommittee: 'and at least t colluding key-committee members',
+      plusHost: 'and, in simulated mode, the enclave host operator',
+      enclaveTdx: 'Enclave (TDX)',
+      enclaveTdxReported: 'Enclave (TDX, operator-reported)',
+      hostOperator: 'Host operator (simulated)',
+      publicOnlyFills: 'Public only for fills',
+      commitmentRepeats:
+        'Its sealed commitment repeats each epoch (partly masked by cover traffic)',
+      same: 'Same',
+      isolation:
+        "The relay operator, if it isolates your order: it can refuse other traders' orders for an epoch, fill the batch with its own orders at chosen prices and learn from the public fills whether, and about where, your order would trade",
+      publicFillsOfEpoch: 'Public fills of that epoch',
+      public: 'Public',
+      never: 'Never published',
+      none: '-',
+    },
+  },
+  trust: {
+    title: "This deployment's trust labels",
+    caption: 'Trust configuration',
+    reported: 'Reported by the operator',
+    verified: 'Verified in your browser',
+    labels: {
+      enclave: 'Enclave platform',
+      quoteGeneration: 'Quote generation',
+      quoteVerification: 'Quote verification',
+      keyGeneration: 'Key generation',
+      dkg: 'Distributed key generation',
+      mpc: 'MPC execution',
+      reference: 'Reference price source',
+      quorum: 'Receipt quorum',
+      executors: 'Registered executors',
+    },
+    values: {
+      simulated: 'Simulated',
+      intel_tdx: 'Intel TDX',
+      tdxVouched: 'Intel TDX (required by at least t key-committee members)',
+      configfs_tsm_untested_on_hardware: 'configfs-tsm, untested on hardware',
+      simulated_vendor: 'Simulated vendor',
+      intel_dcap: 'Intel DCAP',
+      trusted_dealer_feldman: 'Trusted dealer (Feldman VSS)',
+      dkgNo: 'Not implemented',
+      disabled: 'Disabled',
+      fixed: 'Fixed',
+      last_clearing: 'Last clearing price',
+      operator: 'Operator',
+      modelled_tlsnotary: 'TLSNotary (modelled)',
+      unknown: 'Unknown (newer than this app)',
+      quorum: (n: number) => `${n} co-signing executors`,
+    },
+    notes: 'Operator notes',
+    loading: 'Loading trust labels...',
+    unavailable: 'Trust labels are unavailable while the service cannot be reached.',
+  },
+  threats: {
+    title: 'Threats',
+    protects: 'Protects against',
+    doesNot: 'Does not protect against',
+    protectsList: [
+      'Front-running and copying of resting intent by other traders and the public',
+      'The relay reordering orders it cannot read',
+      'The relay or a slot leader steering the priority order (beacon after commit plus a secret seed component)',
+      'The relay substituting or silently dropping a promised order (evidence is kept)',
+      'The relay censoring a wallet through its balance snapshot (the enclave checks it)',
+      `A site that tricks you into signing an order code (${name} also requires your own session grant)`,
+    ],
+    doesNotList: [
+      { text: 'Chain analysis of deposits and fills', strong: false },
+      { text: 'The operator seeing that you traded and when', strong: false },
+      { text: 'The simulated enclave operator reading orders', strong: true },
+      {
+        text: "A dishonest key dealer, or theft of the dealer's key (all future epochs)",
+        strong: false,
+      },
+      { text: 'at least t colluding committee members', strong: false },
+      {
+        text: 'The relay operator isolating and probing a single order (signed refusals give you evidence that it refused others, but not that it probed you)',
+        strong: true,
+      },
+      {
+        text: 'A relay that withholds execution to void an epoch (visible as a timeout)',
+        strong: false,
+      },
+      { text: 'Linkability of orders that rest across epochs', strong: false },
+      { text: 'A program upgrade by the upgrade authority after its time lock', strong: false },
+    ],
+  },
+  retention: {
+    title: 'What the service keeps',
+    text: [
+      'In the live node database, envelopes and other private rows are deleted a fixed number of epochs after their epoch ends, and wallet links are cleared 24 hours after it ends.',
+      'The database replica keeps deleted rows for up to 24 hours longer.',
+      'Nightly backups contain no private tables.',
+    ],
+  },
+  device: {
+    title: 'What this device keeps',
+    text: [
+      `Order details live only on this device, in an encrypted journal. The key sits in the same browser profile, so any script running on the ${name} origin, the browser's developer tools, or malware running as you can read them. The encryption protects against casual reading of copied browser data.`,
+      '"Auto-hide values" masks values on screen after a few idle minutes. It is not a lock.',
+      'Unfilled orders and their secrets cannot be recovered after local data is lost. Export a backup from Settings.',
+    ],
+    settingsLink: 'Local data settings',
+  },
+  whyNotFilled: `${name} does not publish reasons. Possible causes: your limit was outside where the batch cleared, your available balance did not cover it when the batch was sealed, you had orders on both sides of this book (self-trade prevention), rationing at the clearing price, or your price was outside this epoch's band.`,
+} as const;

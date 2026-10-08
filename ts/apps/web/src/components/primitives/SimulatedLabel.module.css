@@ -1,0 +1,15 @@
+.label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--simulated);
+  border-radius: var(--radius-xs);
+  background-color: var(--simulated-bg);
+  background-image: var(--sim-pattern);
+  color: var(--simulated);
+  font-size: var(--fs-100);
+  line-height: var(--lh-100);
+  font-weight: 600;
+  white-space: nowrap;
+}

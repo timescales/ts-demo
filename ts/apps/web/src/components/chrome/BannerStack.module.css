@@ -1,0 +1,9 @@
+.stack {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: stretch;
+}
+
+.stack > button {
+  justify-self: start;
+}

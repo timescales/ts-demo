@@ -1,0 +1,107 @@
+.bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  height: var(--topbar-h);
+  padding: 0 var(--space-6);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.home {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.home > svg {
+  pointer-events: none;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.navList {
+  display: flex;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.navLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: max(32px, var(--target-min));
+  padding: var(--space-1) var(--space-4);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: var(--fs-300);
+  font-weight: 600;
+  text-decoration: none;
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+
+.navLink:hover {
+  color: var(--text);
+  background: var(--surface-raised);
+}
+
+.current {
+  color: var(--text);
+  background: var(--accent-bg);
+}
+
+.market {
+  min-width: 240px;
+}
+
+/* The select names itself through its label; the word is noise beside it. */
+.market label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.pill {
+  display: none;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-left: auto;
+}
+
+@media (max-width: 599px) {
+  .bar {
+    gap: var(--space-3);
+    padding: 0 var(--space-4);
+  }
+
+  .nav,
+  .market,
+  .session {
+    display: none;
+  }
+
+  .pill {
+    display: block;
+    min-width: 0;
+  }
+}

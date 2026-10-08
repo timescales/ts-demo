@@ -1,0 +1,105 @@
+.footer {
+  position: fixed;
+  inset: auto 0 0 0;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  column-gap: var(--space-5);
+  row-gap: var(--space-1);
+  min-height: var(--footer-min-h);
+  padding: var(--space-1) var(--space-6);
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: var(--fs-100);
+  line-height: var(--lh-100);
+}
+
+.enclave {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-2);
+  row-gap: var(--space-1);
+  min-height: 22px;
+}
+
+/* The untested clause wraps on narrow screens instead of overflowing. */
+.untested {
+  max-width: 100%;
+  white-space: normal;
+}
+
+.tdx {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.items {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-5);
+  row-gap: var(--space-1);
+  flex: 1 1 320px;
+  min-width: 0;
+  min-height: 22px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dot {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.mark {
+  font-size: 10px;
+}
+
+.dot[data-health='ok'] .mark {
+  color: var(--buy);
+}
+
+.dot[data-health='degraded'] .mark {
+  color: var(--warning);
+}
+
+.dot[data-health='down'] .mark {
+  color: var(--danger);
+}
+
+.links {
+  display: flex;
+  gap: var(--space-4);
+}
+
+.link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  color: var(--text-muted);
+}
+
+.link:hover {
+  color: var(--text);
+}
+
+/* Below 600 px the tab bar takes the bottom edge and the footer sits on it;
+   the label stays on the first line and the rest wraps beneath. */
+@media (max-width: 599px) {
+  .footer {
+    bottom: var(--tabbar-h);
+    padding: var(--space-1) var(--space-4);
+  }
+
+  /* Reached through the tab bar's "More" menu at this width. */
+  .wide {
+    display: none;
+  }
+}

@@ -1,0 +1,17 @@
+.seal {
+  color: var(--accent);
+}
+
+.ring {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+
+.epoch {
+  fill: currentColor;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  text-anchor: middle;
+  dominant-baseline: central;
+}

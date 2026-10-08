@@ -1,0 +1,54 @@
+.bar {
+  display: none;
+}
+
+.list {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cell {
+  flex: 1;
+}
+
+.tab {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: var(--space-1);
+  min-height: 44px;
+  /* With the bar's 1 px top border, the bar is exactly --tabbar-h tall. */
+  height: calc(var(--tabbar-h) - 1px);
+  color: var(--text-muted);
+  font-size: var(--fs-100);
+  line-height: var(--lh-100);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+/* A tab can be a button (the "More" menu): same look as the links. */
+button.tab {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.current {
+  color: var(--accent);
+}
+
+@media (max-width: 599px) {
+  .bar {
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: 21;
+    display: block;
+    border-top: 1px solid var(--line);
+    background: var(--bg);
+  }
+}

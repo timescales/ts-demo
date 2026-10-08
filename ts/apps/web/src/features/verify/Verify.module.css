@@ -1,0 +1,36 @@
+.form {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 760px;
+}
+
+.label {
+  font-size: var(--fs-100);
+  line-height: var(--lh-100);
+  font-weight: 600;
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.hint {
+  font-size: var(--fs-200);
+  line-height: var(--lh-200);
+  color: var(--text-muted);
+}
+
+.textarea {
+  width: 100%;
+  min-height: 9rem;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  font-family: var(--font-mono);
+  font-size: var(--fs-200);
+  resize: vertical;
+}
+
+.textarea[aria-invalid='true'] {
+  border-color: var(--danger);
+}
