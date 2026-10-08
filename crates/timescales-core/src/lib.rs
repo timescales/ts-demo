@@ -37,3 +37,5 @@ pub mod crypto;
 pub mod identity;
 pub mod intent;
 pub mod merkle;
+pub mod oracle;
+pub mod tls_proof;
