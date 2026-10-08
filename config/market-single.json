@@ -1,0 +1,15 @@
+{
+  "band_half_width": 32,
+  "base_lot_size": 1000,
+  "commitment_scheme": "sha256",
+  "flow": "single",
+  "maker_fee_bps": 1,
+  "market": 1,
+  "max_batch_envelopes": 2097152,
+  "max_order_lifetime": 8,
+  "max_order_lots_log2": 20,
+  "max_orders_per_trader": 1024,
+  "rationing": "lottery",
+  "taker_fee_bps": 5,
+  "tick_size": 100
+}
