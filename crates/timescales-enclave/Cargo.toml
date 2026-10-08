@@ -1,0 +1,51 @@
+[package]
+name = "timescales-enclave"
+description = "The enclave service: attested execution with key release from the committee"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "timescales-enclave"
+path = "src/main.rs"
+
+[features]
+litesvm = ["timescales-chain/litesvm"]
+otlp = ["timescales-service/otlp"]
+sim-platform = ["timescales-executor/sim-platform"]
+tdx-tsm = ["timescales-executor/tdx-tsm"]
+test-util = ["timescales-chain/test-util"]
+
+[dependencies]
+timescales-auction.workspace = true
+timescales-chain = { workspace = true, features = ["rpc-minimal"] }
+timescales-core.workspace = true
+timescales-executor.workspace = true
+timescales-service.workspace = true
+anyhow.workspace = true
+axum.workspace = true
+base64.workspace = true
+bs58.workspace = true
+clap.workspace = true
+futures.workspace = true
+governor.workspace = true
+hex.workspace = true
+parking_lot.workspace = true
+prometheus-client.workspace = true
+rand_core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["fs", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+toml.workspace = true
+tracing.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util", "time"] }
+
+[lints]
+workspace = true
