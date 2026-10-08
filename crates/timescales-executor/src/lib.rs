@@ -245,8 +245,11 @@ pub mod mpc;
 pub mod policy;
 #[cfg(feature = "zk")]
 pub mod prover;
+pub mod scheduler;
 pub mod tee;
 #[cfg(feature = "zk")]
 pub mod verifier;
+#[cfg(feature = "mpc-simulation")]
+pub mod workload;
 #[cfg(feature = "zk")]
 pub mod zk;
