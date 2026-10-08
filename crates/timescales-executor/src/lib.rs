@@ -240,5 +240,7 @@ pub trait ConfidentialExecutor: Send + Sync {
 }
 
 pub mod attestation;
+#[cfg(feature = "mpc-simulation")]
+pub mod mpc;
 pub mod policy;
 pub mod tee;
