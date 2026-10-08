@@ -370,4 +370,6 @@ mod tests {
 }
 
 pub mod clearing;
+pub mod collateral;
+pub mod orderbook;
 pub mod risk;
