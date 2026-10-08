@@ -1,0 +1,59 @@
+[package]
+name = "timescales-chain"
+description = "Solana access: instruction builders and account layouts of the settlement program, RPC and LiteSVM providers"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+default = ["rpc-client"]
+litesvm = ["dep:litesvm", "dep:solana-account", "dep:solana-clock", "dep:solana-slot-hashes"]
+rpc-client = ["dep:solana-rpc-client", "dep:solana-rpc-client-api", "dep:solana-commitment-config", "dep:solana-account-decoder-client-types", "dep:solana-transaction-status-client-types"]
+rpc-minimal = ["dep:reqwest"]
+test-util = []
+
+[dependencies]
+timescales-auction.workspace = true
+timescales-core.workspace = true
+base64.workspace = true
+bincode.workspace = true
+bs58.workspace = true
+curve25519-dalek.workspace = true
+futures.workspace = true
+litesvm = { workspace = true, optional = true }
+parking_lot.workspace = true
+rand.workspace = true
+reqwest = { workspace = true, optional = true }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+solana-account = { workspace = true, optional = true }
+solana-account-decoder-client-types = { workspace = true, optional = true }
+solana-address.workspace = true
+solana-clock = { workspace = true, optional = true }
+solana-commitment-config = { workspace = true, optional = true }
+solana-hash.workspace = true
+solana-instruction.workspace = true
+solana-keypair.workspace = true
+solana-message.workspace = true
+solana-rpc-client = { workspace = true, optional = true }
+solana-rpc-client-api = { workspace = true, optional = true }
+solana-signature.workspace = true
+solana-signer.workspace = true
+solana-slot-hashes = { workspace = true, optional = true }
+solana-transaction.workspace = true
+solana-transaction-status-client-types = { workspace = true, optional = true }
+thiserror.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "sync", "time"] }
+tracing.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+rustls.workspace = true
+tokio = { workspace = true, features = ["macros", "net", "rt", "rt-multi-thread", "test-util", "time"] }
+
+[lints]
+workspace = true
