@@ -1,0 +1,36 @@
+[package]
+name = "timescales-core"
+description = "Protocol primitives: canonical encoding, hashing, keys, sealed envelopes and price commitments"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+poseidon = ["dep:ark-bn254", "dep:ark-ff", "dep:ark-crypto-primitives"]
+simulation = []
+
+[dependencies]
+ark-bn254 = { workspace = true, optional = true }
+ark-crypto-primitives = { workspace = true, optional = true }
+ark-ff = { workspace = true, optional = true }
+chacha20poly1305.workspace = true
+curve25519-dalek.workspace = true
+ed25519-dalek.workspace = true
+hkdf.workspace = true
+rand_core.workspace = true
+sha2.workspace = true
+subtle.workspace = true
+thiserror.workspace = true
+x25519-dalek.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+timescales-core = { path = ".", features = ["simulation"] }
+proptest.workspace = true
+rand.workspace = true
+rand_chacha.workspace = true
+
+[lints]
+workspace = true
