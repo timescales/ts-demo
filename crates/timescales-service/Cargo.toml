@@ -1,0 +1,69 @@
+[package]
+name = "timescales-service"
+description = "Shared service layer: wire messages, the public API types, configuration, signed envelopes, TLS, telemetry, SQLite and the relay"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+otlp = ["dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-otlp", "dep:tracing-opentelemetry"]
+simulation = []
+
+[dependencies]
+timescales-auction.workspace = true
+timescales-chain.workspace = true
+timescales-core.workspace = true
+timescales-executor.workspace = true
+axum.workspace = true
+axum-server.workspace = true
+base64.workspace = true
+bs58.workspace = true
+chacha20poly1305.workspace = true
+curve25519-dalek.workspace = true
+futures.workspace = true
+hex.workspace = true
+hkdf.workspace = true
+hmac.workspace = true
+opentelemetry = { workspace = true, optional = true }
+opentelemetry-otlp = { workspace = true, optional = true }
+opentelemetry_sdk = { workspace = true, optional = true }
+parking_lot.workspace = true
+prometheus-client.workspace = true
+rand.workspace = true
+rand_chacha.workspace = true
+rand_core.workspace = true
+reqwest.workspace = true
+rusqlite.workspace = true
+rustls.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+time.workspace = true
+tokio = { workspace = true, features = ["fs", "macros", "net", "rt", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-util.workspace = true
+toml.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+tracing.workspace = true
+tracing-opentelemetry = { workspace = true, optional = true }
+tracing-subscriber.workspace = true
+x509-parser.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+timescales-service = { path = ".", features = ["simulation"] }
+timescales-auction = { workspace = true, features = ["simulation"] }
+timescales-executor = { workspace = true, features = ["simulation"] }
+anyhow.workspace = true
+clap.workspace = true
+proptest.workspace = true
+rcgen.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "test-util", "time"] }
+
+[lints]
+workspace = true
