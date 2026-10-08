@@ -6,6 +6,7 @@ members = [
     "crates/timescales-executor",
     "crates/timescales-chain",
     "crates/timescales-service",
+    "crates/timescales-node",
 ]
 
 [workspace.package]

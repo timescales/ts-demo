@@ -1,0 +1,158 @@
+# A production configuration that passes `config-check --offline`. The key,
+# token and TLS files are deployment secrets and are not part of the
+# fixture: they are checked by `run` and by `config-check` without
+# `--offline`.
+
+[node]
+id = "node-1"
+profile = "production"
+data_dir = "/var/lib/timescales-node"
+shutdown_grace_ms = 30000
+
+[api]
+listen = "0.0.0.0:8080"
+public_base_url = "https://trade.example.org"
+session_domains = ["trade.example.org"]
+cors_allowed_origins = ["https://trade.example.org"]
+trusted_proxy_cidrs = ["10.0.0.0/8"]
+max_body_bytes = 4096
+submit_max_body_bytes = 2048
+max_concurrency = 512
+request_timeout_ms = 10000
+ws_max_connections = 5000
+ws_max_connections_per_ip = 20
+ws_max_subscriptions = 16
+ws_send_queue = 256
+ws_heartbeat_ms = 15000
+ws_inbound_max_bytes = 4096
+event_log_hours = 24
+
+[api.rate_limit]
+per_ip_rps = 20
+per_ip_burst = 40
+per_session_rps = 5
+per_session_burst = 20
+per_wallet_submit_rps = 5
+per_wallet_submit_burst = 20
+
+[sessions]
+max_ttl_s = 86400
+nonce_ttl_s = 300
+max_per_wallet = 4
+skew_ms = 30000
+allow_sign_message_grants = false
+
+[admin]
+listen = "10.0.0.5:8081"
+token_file = "/run/secrets/admin-token"
+dealer_keys = ["2b9c0d6a8f1e4b7c9d3a5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3"]
+
+[metrics]
+listen = "10.0.0.5:9100"
+
+[telemetry]
+log_format = "json"
+log_filter = "info"
+otlp_endpoint = ""
+service_name = "timescales-node"
+
+[solana]
+cluster = "mainnet-beta"
+genesis_hash = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"
+program_id = "FDQqHeaCY2iG9kbjkGGJngY2rgend8dW4JjfXmCQytQL"
+rpc_urls = ["https://rpc-a.example.org", "https://rpc-b.example.org"]
+rpc_timeout_ms = 5000
+read_commitment = "confirmed"
+release_commitment = "finalized"
+poll_interval_ms = 400
+confirm_timeout_ms = 60000
+tx_max_attempts = 8
+max_parallel_txs = 16
+cu_margin_pct = 20
+min_relay_balance_lamports = "6000000000"
+min_cranker_balance_lamports = "200000000"
+reclaim_batches = true
+
+[solana.priority_fee]
+mode = "recent"
+fixed_micro_lamports = "1000"
+percentile = 75
+max_micro_lamports = "200000"
+
+[keys]
+relay_keypair = "/run/secrets/relay.json"
+cranker_keypair = "/run/secrets/cranker.json"
+service_key = "/run/secrets/node-service.hex"
+kek_file = "/run/secrets/node-kek.hex"
+nonce_key_file = "/run/secrets/node-nonce.hex"
+
+[tls]
+cert_file = "/run/secrets/node-tls.crt"
+key_file = "/run/secrets/node-tls.key"
+peer_spki_sha256 = [
+  "1f2e3d4c5b6a79881f2e3d4c5b6a79881f2e3d4c5b6a79881f2e3d4c5b6a7988",
+  "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
+]
+
+[store]
+synchronous = "full"
+group_commit_ms = 2
+group_commit_max = 256
+readers = 4
+queue = 8192
+busy_timeout_ms = 5000
+private_keep_epochs = 64
+wallet_link_hours = 24
+backup_every_epochs = 0
+backup_dir = "/var/lib/timescales-node/backups"
+
+[execution]
+spare_executions = 1
+attempts_per_enclave = 2
+attempt_timeout_ms = 60000
+retry_backoff_ms = 500
+circuit_open_after = 3
+circuit_half_open_after_ms = 30000
+expected_platform = "intel_tdx"
+
+[[execution.enclave]]
+url = "https://enclave-a.internal:8090"
+identity = "0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9"
+executor = "1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f809"
+
+[[execution.enclave]]
+url = "https://enclave-b.internal:8090"
+identity = "2a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9"
+executor = "3a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f809"
+
+[[execution.enclave]]
+url = "https://enclave-c.internal:8090"
+identity = "4a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9"
+executor = "5a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f809"
+
+[[market]]
+address = "HZmWpETys8W4vzgysV5oVgwv4DAFKJz9raBBv6FFgeuG"
+name = "SOL/USDC"
+base_symbol = "SOL"
+quote_symbol = "USDC"
+params_file = "market.production.json"
+committee_file = "committee.production.bin"
+epoch_interval_ms = 10000
+padding = { kind = "power_of_two", min = 64 }
+cover_carry_probability = 0.5
+max_real_per_epoch = 1024
+max_park_ahead_epochs = 6
+idle_policy = "commit"
+max_idle_extend = 6
+
+[market.quota]
+max_envelopes_per_wallet_per_epoch = 16
+max_parked_per_wallet = 64
+require_trader_account = true
+min_available_value_quote = "1000000"
+min_value_per_envelope_quote = "1000000"
+ban_epochs = 64
+
+[market.reference]
+source = "last_clearing"
+initial_tick = "10000"
