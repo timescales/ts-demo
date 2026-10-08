@@ -1,0 +1,97 @@
+{
+  "name": "@timescales/sdk",
+  "version": "0.1.0",
+  "description": "Timescales trader SDK: encoding, crypto and protocol, verification, API client, Solana, wallet sessions, journal and orders",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "sideEffects": [
+    "./src/index.ts",
+    "./src/*/index.ts",
+    "./dist/index.js",
+    "./dist/*/index.js"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./core": {
+      "source": "./src/core/index.ts",
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js"
+    },
+    "./verify": {
+      "source": "./src/verify/index.ts",
+      "types": "./dist/verify/index.d.ts",
+      "import": "./dist/verify/index.js"
+    },
+    "./api": {
+      "source": "./src/api/index.ts",
+      "types": "./dist/api/index.d.ts",
+      "import": "./dist/api/index.js"
+    },
+    "./solana": {
+      "source": "./src/solana/index.ts",
+      "types": "./dist/solana/index.d.ts",
+      "import": "./dist/solana/index.js"
+    },
+    "./wallet": {
+      "source": "./src/wallet/index.ts",
+      "types": "./dist/wallet/index.d.ts",
+      "import": "./dist/wallet/index.js"
+    },
+    "./journal": {
+      "source": "./src/journal/index.ts",
+      "types": "./dist/journal/index.d.ts",
+      "import": "./dist/journal/index.js"
+    },
+    "./orders": {
+      "source": "./src/orders/index.ts",
+      "types": "./dist/orders/index.d.ts",
+      "import": "./dist/orders/index.js"
+    },
+    "./testing": {
+      "source": "./src/testing/index.ts",
+      "types": "./dist/testing/index.d.ts",
+      "import": "./dist/testing/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && if [ -f test/tsconfig.json ]; then tsc -p test/tsconfig.json --noEmit; fi && tsc -p scripts/tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "api-report": "node etc/api-report.mjs",
+    "size": "size-limit"
+  },
+  "dependencies": {
+    "@noble/ciphers": "~2.4.0",
+    "@noble/curves": "~2.4.0",
+    "@noble/hashes": "~2.4.0",
+    "@solana/kit": "~8.4.0",
+    "@solana/wallet-standard-features": "~1.5.0",
+    "@wallet-standard/app": "~1.1.1",
+    "@wallet-standard/base": "~1.1.1",
+    "@wallet-standard/features": "~1.1.1",
+    "idb": "~8.0.4",
+    "zod": "~4.6.5"
+  },
+  "size-limit": [
+    {
+      "name": "core",
+      "path": "dist/core/index.js",
+      "import": "*",
+      "limit": "60 KB",
+      "gzip": true,
+      "running": false
+    }
+  ]
+}

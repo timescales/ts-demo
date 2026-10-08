@@ -1,0 +1,51 @@
+{
+  "name": "timescales-ts",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/sdk",
+    "apps/web"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "lint": "eslint . && prettier --check \"**/*.{ts,tsx,js,mjs,css,html}\" \"!**/dist/**\" \"!**/dist-test/**\" \"!**/test-results/**\" \"!**/playwright-report/**\" \"!**/blob-report/**\" && lockfile-lint",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "format": "prettier --write \"**/*.{ts,tsx,js,mjs,css,html}\" \"!**/dist/**\" \"!**/dist-test/**\" \"!**/test-results/**\" \"!**/playwright-report/**\" \"!**/blob-report/**\"",
+    "size": "npm run size --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "~1.63.0",
+    "@size-limit/preset-app": "^14.1.0",
+    "@size-limit/rolldown": "^14.1.0",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
+    "@types/node": "^24.19.1",
+    "@types/react": "~19.3.0",
+    "@types/react-dom": "~19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "axe-core": "^4.14.0",
+    "eslint": "^10.12.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "fake-indexeddb": "^6.2.5",
+    "fast-check": "^4.10.2",
+    "globals": "^17.13.0",
+    "happy-dom": "^20.14.5",
+    "lockfile-lint": "^5.0.1",
+    "markdownlint-cli2": "^0.23.3",
+    "msw": "^3.0.2",
+    "prettier": "^3.9.9",
+    "size-limit": "^14.1.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.71.1",
+    "vite": "^8.3.3",
+    "vitest": "^5.0.3",
+    "yaml": "^2.9.1"
+  }
+}
