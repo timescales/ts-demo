@@ -46,3 +46,4 @@ pub use tls::TlsConfig;
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
+pub mod wire;
