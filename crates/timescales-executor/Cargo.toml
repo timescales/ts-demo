@@ -1,0 +1,55 @@
+[package]
+name = "timescales-executor"
+description = "Execution backends: the reference pipeline, attested enclaves with threshold key release, MPC, proofs and scheduling"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+fault-injection = []
+mpc-simulation = []
+sim-platform = []
+simulation = ["timescales-auction/simulation", "sim-platform"]
+tdx-dcap = ["dep:dcap-qvl", "dep:serde_json"]
+tdx-tsm = []
+zk = ["dep:ark-bn254", "dep:ark-crypto-primitives", "dep:ark-ec", "dep:ark-ff", "dep:ark-groth16", "dep:ark-r1cs-std", "dep:ark-relations", "dep:ark-serialize", "dep:ark-snark", "dep:ark-std", "dep:zeroize", "timescales-core/poseidon"]
+
+[dependencies]
+timescales-auction.workspace = true
+timescales-core.workspace = true
+arc-swap.workspace = true
+ark-bn254 = { workspace = true, optional = true }
+ark-crypto-primitives = { workspace = true, optional = true }
+ark-ec = { workspace = true, optional = true }
+ark-ff = { workspace = true, optional = true }
+ark-groth16 = { workspace = true, features = ["r1cs"], optional = true }
+ark-r1cs-std = { workspace = true, optional = true }
+ark-relations = { workspace = true, optional = true }
+ark-serialize = { workspace = true, optional = true }
+ark-snark = { workspace = true, optional = true }
+ark-std = { workspace = true, optional = true }
+dcap-qvl = { workspace = true, optional = true }
+futures.workspace = true
+hkdf.workspace = true
+parking_lot.workspace = true
+rand.workspace = true
+rand_chacha.workspace = true
+rand_core.workspace = true
+rayon.workspace = true
+serde_json = { workspace = true, optional = true }
+sha2.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["rt", "sync", "time"] }
+tokio-util.workspace = true
+zeroize = { workspace = true, optional = true }
+
+[dev-dependencies]
+timescales-executor = { path = ".", features = ["fault-injection", "mpc-simulation", "sim-platform", "simulation", "zk"] }
+hex.workspace = true
+proptest.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time"] }
+
+[lints]
+workspace = true
