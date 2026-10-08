@@ -1,0 +1,42 @@
+[package]
+name = "timescales-settlement-program"
+description = "On-chain settlement for Timescales batches"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[features]
+no-entrypoint = []
+custom-heap = []
+custom-panic = []
+localnet = []
+
+[dependencies]
+solana-program = "3"
+
+[dev-dependencies]
+litesvm = { version = "0.17", features = ["precompiles"] }
+solana-keypair = "3.1"
+solana-signer = "3.0"
+solana-transaction = "4.3"
+solana-message = "4.6"
+solana-instruction = "3.5"
+solana-address = "2.7"
+solana-account = "4.7"
+ed25519-dalek = "2.2"
+timescales-core = { path = "../../crates/timescales-core" }
+timescales-auction = { path = "../../crates/timescales-auction", features = ["simulation"] }
+timescales-executor = { path = "../../crates/timescales-executor", features = ["simulation", "mpc-simulation"] }
+timescales-chain = { path = "../../crates/timescales-chain", default-features = false }
+sha2 = "0.10"
+tokio = { version = "1", features = ["rt", "macros", "rt-multi-thread"] }
+proptest = "1.5"
+
+[profile.release]
+overflow-checks = true
+
+[workspace]
