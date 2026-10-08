@@ -47,5 +47,8 @@ pub use tls::TlsConfig;
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 pub mod api;
+#[cfg(feature = "simulation")]
+pub mod p2p;
+pub mod relay;
 pub mod store;
 pub mod wire;
