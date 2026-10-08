@@ -1,0 +1,125 @@
+[workspace]
+resolver = "3"
+members = [
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "MIT"
+publish = false
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+unreachable_pub = "warn"
+
+[workspace.lints.clippy]
+float_arithmetic = "deny"
+cast_possible_truncation = "warn"
+dbg_macro = "deny"
+todo = "deny"
+unwrap_used = "warn"
+
+[workspace.dependencies]
+timescales-core = { path = "crates/timescales-core" }
+timescales-auction = { path = "crates/timescales-auction" }
+timescales-executor = { path = "crates/timescales-executor" }
+timescales-chain = { path = "crates/timescales-chain", default-features = false }
+timescales-service = { path = "crates/timescales-service" }
+timescales-node = { path = "crates/timescales-node" }
+timescales-enclave = { path = "crates/timescales-enclave" }
+timescales-krc = { path = "crates/timescales-krc" }
+timescales-cli = { path = "crates/timescales-cli" }
+thiserror = "2"
+hex = "0.4"
+sha2 = "0.10"
+hkdf = "0.12"
+ed25519-dalek = { version = "2.2", features = ["rand_core", "zeroize"] }
+x25519-dalek = { version = "2.0", features = ["static_secrets", "zeroize"] }
+chacha20poly1305 = "0.10"
+rand_core = { version = "0.6", features = ["getrandom"] }
+rand = "0.8"
+rand_chacha = "0.3"
+zeroize = { version = "1.8", features = ["derive"] }
+proptest = "1.5"
+subtle = "2.6"
+rayon = "1.10"
+futures = "0.3"
+curve25519-dalek = { version = "4", features = ["rand_core", "zeroize"] }
+hmac = "0.12"
+ark-ff = "0.6"
+ark-ec = "0.6"
+ark-bn254 = "0.6"
+ark-std = "0.6"
+ark-relations = "0.6"
+ark-r1cs-std = "0.6"
+ark-snark = "0.6"
+ark-groth16 = "0.6"
+ark-serialize = "0.6"
+ark-crypto-primitives = { version = "0.6", features = ["sponge", "crh", "constraints"] }
+tokio = { version = "1.40", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+clap = { version = "4.5", features = ["derive"] }
+anyhow = "1"
+cpu-time = "1"
+peak_alloc = "0.3"
+criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
+dcap-qvl = { version = "0.6", default-features = false, features = ["std", "rustcrypto", "default-x509"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+axum = { version = "0.8", features = ["ws"] }
+axum-server = { version = "0.8", features = ["tls-rustls-no-provider"] }
+tower = { version = "0.5", features = ["util", "limit", "timeout"] }
+tower-http = { version = "0.7", features = ["cors", "limit", "timeout", "trace", "request-id", "set-header", "sensitive-headers"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "http2", "json"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "logging", "tls12"] }
+rusqlite = { version = "0.40", features = ["bundled", "backup"] }
+prometheus-client = "0.25"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+opentelemetry = "0.33"
+opentelemetry_sdk = "0.33"
+opentelemetry-otlp = { version = "0.33", default-features = false, features = ["http-proto", "reqwest-client", "trace"] }
+tracing-opentelemetry = "0.34"
+governor = "0.10"
+toml = "1"
+schemars = "1"
+time = { version = "0.3", features = ["formatting", "parsing"] }
+arc-swap = "1"
+parking_lot = "0.12"
+ipnet = "2"
+base64 = "0.23"
+bs58 = "0.5"
+uuid = { version = "1", features = ["v7"] }
+tempfile = "3"
+bincode = "1.3"
+x509-parser = "0.18"
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "pem", "ring"] }
+solana-rpc-client = "4.2"
+solana-rpc-client-api = "4.2"
+solana-commitment-config = "3.1"
+solana-account-decoder-client-types = "4.2"
+solana-transaction-status-client-types = "4.2"
+solana-transaction = { version = "4.1", features = ["serde"] }
+solana-message = { version = "4.2", features = ["serde"] }
+solana-instruction = "3.4"
+solana-keypair = "3.1"
+solana-signer = "3.0"
+solana-address = "2.6"
+solana-signature = "3.4"
+solana-hash = "4.5"
+solana-account = "4.3"
+solana-clock = "3"
+solana-slot-hashes = "3"
+litesvm = { version = "0.16", features = ["precompiles"] }
+
+[profile.release]
+debug = 1
+overflow-checks = true
+lto = "thin"
+codegen-units = 1
+
+[profile.bench]
+debug = 1
