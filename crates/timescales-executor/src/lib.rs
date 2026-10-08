@@ -241,3 +241,4 @@ pub trait ConfidentialExecutor: Send + Sync {
 
 pub mod attestation;
 pub mod policy;
+pub mod tee;
