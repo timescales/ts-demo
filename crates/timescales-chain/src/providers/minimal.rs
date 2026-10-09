@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
+use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
 use super::ProviderError;
@@ -72,7 +73,11 @@ impl HttpTransport for ReqwestTransport {
                 .await
                 .map_err(reqwest_error)?;
             let status = response.status().as_u16();
-            let mut body = Vec::new();
+            let announced = response
+                .content_length()
+                .and_then(|n| usize::try_from(n).ok())
+                .unwrap_or(0);
+            let mut body = Vec::with_capacity(announced.min(self.max_body));
             while let Some(chunk) = response.chunk().await.map_err(reqwest_error)? {
                 if body.len() + chunk.len() > self.max_body {
                     return Err(RpcError::Decode(format!(
@@ -151,25 +156,120 @@ impl MinimalRpc {
         params: Value,
         min_slot: Option<u64>,
     ) -> Result<Value, RpcError> {
-        let (index, url) = self.failover.current();
-        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        let request = json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params});
-        let body = serde_json::to_vec(&request).map_err(|e| RpcError::Decode(e.to_string()))?;
-        let result = match self.transport.post(url.to_owned(), body).await {
-            Ok(reply) => parse_reply(&reply, id, min_slot),
-            Err(e) => Err(e),
-        };
+        let (index, id, reply) = self.post(method, params).await;
+        let result = reply.and_then(|reply| parse_reply(&reply, id, min_slot));
         self.failover.record(index, &result);
         result
     }
+
+    /// `getProgramAccounts` is the one reply large enough to matter: a
+    /// market's trader accounts, decoded straight from the body.
+    async fn program_accounts(
+        &self,
+        params: Value,
+        min_slot: Option<u64>,
+    ) -> Result<(u64, KeyedAccounts), RpcError> {
+        let (index, id, reply) = self.post("getProgramAccounts", params).await;
+        let result = reply.and_then(|reply| parse_program_accounts(&reply, id, min_slot));
+        self.failover.record(index, &result);
+        result
+    }
+
+    /// One request to the current provider: its index, the request id and
+    /// the reply, which the caller parses and records.
+    async fn post(
+        &self,
+        method: &'static str,
+        params: Value,
+    ) -> (usize, u64, Result<HttpReply, RpcError>) {
+        let (index, url) = self.failover.current();
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let request = json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params});
+        let reply = match serde_json::to_vec(&request) {
+            Ok(body) => self.transport.post(url.to_owned(), body).await,
+            Err(e) => Err(RpcError::Decode(e.to_string())),
+        };
+        (index, id, reply)
+    }
+}
+
+fn check_status(reply: &HttpReply) -> Result<(), RpcError> {
+    match reply.status {
+        200..=299 => Ok(()),
+        429 => Err(RpcError::RateLimited),
+        status => Err(RpcError::Http(status)),
+    }
+}
+
+/// Accounts of one program, as the enclave reads them.
+type KeyedAccounts = Vec<(Address, Vec<u8>)>;
+
+/// `getProgramAccounts` reply, borrowed from the body: no tree of maps and
+/// strings per account on the way to the bytes.
+#[derive(Deserialize)]
+struct ProgramAccountsReply<'a> {
+    id: Option<u64>,
+    error: Option<Value>,
+    #[serde(borrow)]
+    result: Option<ProgramAccounts<'a>>,
+}
+
+#[derive(Deserialize)]
+struct ProgramAccounts<'a> {
+    context: Context,
+    #[serde(borrow)]
+    value: Vec<KeyedAccount<'a>>,
+}
+
+#[derive(Deserialize)]
+struct Context {
+    slot: u64,
+}
+
+#[derive(Deserialize)]
+struct KeyedAccount<'a> {
+    #[serde(borrow)]
+    pubkey: &'a str,
+    #[serde(borrow)]
+    account: AccountBody<'a>,
+}
+
+#[derive(Deserialize)]
+struct AccountBody<'a> {
+    #[serde(borrow)]
+    data: (&'a str, &'a str),
+}
+
+fn parse_program_accounts(
+    reply: &HttpReply,
+    id: u64,
+    min_slot: Option<u64>,
+) -> Result<(u64, KeyedAccounts), RpcError> {
+    check_status(reply)?;
+    let r: ProgramAccountsReply<'_> =
+        serde_json::from_slice(&reply.body).map_err(|e| RpcError::Decode(e.to_string()))?;
+    if r.id != Some(id) {
+        return Err(decode("response id does not match the request"));
+    }
+    if let Some(err) = &r.error {
+        return Err(rpc_error(err, min_slot));
+    }
+    let result = r
+        .result
+        .ok_or_else(|| decode("response has neither a result nor an error"))?;
+    let accounts = result
+        .value
+        .iter()
+        .map(|k| {
+            let (data, encoding) = k.account.data;
+            Ok((key_str(k.pubkey)?, decode_data(data, encoding)?))
+        })
+        .collect::<Result<_, RpcError>>()?;
+    Ok((result.context.slot, accounts))
 }
 
 fn parse_reply(reply: &HttpReply, id: u64, min_slot: Option<u64>) -> Result<Value, RpcError> {
-    match reply.status {
-        200..=299 => {}
-        429 => return Err(RpcError::RateLimited),
-        status => return Err(RpcError::Http(status)),
-    }
+    check_status(reply)?;
     let mut v: Value =
         serde_json::from_slice(&reply.body).map_err(|e| RpcError::Decode(e.to_string()))?;
     let obj = v
@@ -229,9 +329,13 @@ fn b58(bytes: &[u8]) -> String {
 }
 
 fn key(v: &Value) -> Result<Address, RpcError> {
-    let s = v
-        .as_str()
-        .ok_or_else(|| decode("address is not a string"))?;
+    key_str(
+        v.as_str()
+            .ok_or_else(|| decode("address is not a string"))?,
+    )
+}
+
+fn key_str(s: &str) -> Result<Address, RpcError> {
     let mut out = [0u8; 32];
     match bs58::decode(s).onto(&mut out) {
         Ok(32) => Ok(out),
@@ -283,11 +387,18 @@ fn account(v: &Value, context_slot: u64) -> Result<Option<AccountData>, RpcError
 /// `["<base64>", "base64"]`.
 fn account_data(v: &Value) -> Result<Vec<u8>, RpcError> {
     match v.as_array().map(Vec::as_slice) {
-        Some([Value::String(data), Value::String(encoding)]) if encoding == "base64" => BASE64
-            .decode(data)
-            .map_err(|_| decode("account data is not base64")),
+        Some([Value::String(data), Value::String(encoding)]) => decode_data(data, encoding),
         _ => Err(decode("account data is not [data, \"base64\"]")),
     }
+}
+
+fn decode_data(data: &str, encoding: &str) -> Result<Vec<u8>, RpcError> {
+    if encoding != "base64" {
+        return Err(decode("account data is not [data, \"base64\"]"));
+    }
+    BASE64
+        .decode(data)
+        .map_err(|_| decode("account data is not base64"))
 }
 
 fn filter(f: &Filter) -> Value {
@@ -382,16 +493,7 @@ impl SolanaRpc for MinimalRpc {
                 extra["dataSlice"] = json!({"offset": offset, "length": length});
             }
             let params = json!([b58(&program), config(level, min_slot, extra)]);
-            let (slot, value) =
-                with_context(self.call("getProgramAccounts", params, min_slot).await?)?;
-            let keyed = value
-                .as_array()
-                .ok_or_else(|| decode("getProgramAccounts value is not an array"))?;
-            let accounts = keyed
-                .iter()
-                .map(|k| Ok((key(&k["pubkey"])?, account_data(&k["account"]["data"])?)))
-                .collect::<Result<_, RpcError>>()?;
-            Ok((slot, accounts))
+            self.program_accounts(params, min_slot).await
         })
     }
 
