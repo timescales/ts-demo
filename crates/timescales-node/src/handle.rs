@@ -1061,7 +1061,7 @@ impl NodeApi for NodeHandle {
                 }
                 None => None,
             };
-            self.inner.sessions.get(key, usage).await
+            Ok(Some(self.inner.sessions.dto(&row, None, usage)))
         })
     }
 

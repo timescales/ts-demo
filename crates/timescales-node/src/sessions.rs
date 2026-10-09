@@ -191,7 +191,12 @@ impl Sessions {
         }
     }
 
-    fn dto(&self, row: &SessionRow, evicted: Option<u32>, usage: Option<Usage>) -> Session {
+    pub(crate) fn dto(
+        &self,
+        row: &SessionRow,
+        evicted: Option<u32>,
+        usage: Option<Usage>,
+    ) -> Session {
         Session {
             session_key: Hex32(row.session_pk),
             wallet: B58(row.wallet),
@@ -395,18 +400,6 @@ impl Sessions {
             return Err(ErrorCode::SessionExpired);
         }
         Ok(row)
-    }
-
-    pub async fn get(
-        &self,
-        key: [u8; 32],
-        usage: Option<Usage>,
-    ) -> Result<Option<Session>, NodeError> {
-        Ok(self
-            .repo
-            .session(key)
-            .await?
-            .map(|row| self.dto(&row, None, usage)))
     }
 
     pub async fn revoke(&self, key: [u8; 32]) -> Result<(), NodeError> {
