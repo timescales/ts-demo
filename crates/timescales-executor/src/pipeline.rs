@@ -22,7 +22,7 @@ use timescales_auction::receipts::{
 };
 use timescales_auction::settlement::settle;
 use timescales_auction::{
-    BatchHeader, batch_leaves, batch_root, batch_root_v2, canonical_order, epoch_seed,
+    BatchHeader, BatchLeaf, batch_root, batch_root_v2, canonical_order, epoch_seed,
 };
 use timescales_core::crypto::{EpochSecret, Zeroizing};
 use timescales_core::intent::{IntentBody, PrivateIntent, SealedEnvelope};
@@ -52,7 +52,11 @@ pub fn check_header(
         }
         HEADER_VERSION_ENVELOPE_BOUND => {
             let band = check_terms(header, envelopes.len())?;
-            if header.batch_root != batch_root_v2(&batch_leaves(envelopes)) {
+            // Each leaf hashes a whole envelope, so the leaves are built in
+            // parallel and sorted as the root expects them.
+            let mut leaves: Vec<BatchLeaf> = envelopes.par_iter().map(BatchLeaf::of).collect();
+            leaves.sort_unstable();
+            if header.batch_root != batch_root_v2(&leaves) {
                 return Err(ExecutorError::BadHeader("batch root"));
             }
             check_state(header, balances, prior)?;
@@ -218,14 +222,14 @@ pub fn execute_opened(
 
     let t = Instant::now();
     let order = canonical_order(seed, envelopes);
-    let mut opened: Vec<Option<Result<PrivateIntent, RejectReason>>> =
-        opened.into_iter().map(Some).collect();
+    // Every index appears once in the order, so each opening moves out
+    // exactly once and the placeholder is never read.
     let candidates: Vec<Candidate> = order
         .iter()
         .map(|(i, key)| Candidate {
             commitment: envelopes[*i].commitment,
             priority: *key,
-            intent: opened[*i].take().unwrap_or(Err(RejectReason::Malformed)),
+            intent: std::mem::replace(&mut opened[*i], Err(RejectReason::Malformed)),
         })
         .collect();
     metrics.stages.push(("order".into(), t.elapsed()));
@@ -247,7 +251,7 @@ pub fn execute_opened(
     metrics.stages.push(("validate".into(), t.elapsed()));
     metrics.accepted = validated.accepted();
     metrics.rejected = validated.rejected();
-    let mut v = Vec::new();
+    let mut v = Vec::with_capacity(validated.dispositions.len() * 48);
     for (c, d) in &validated.dispositions {
         c.encode(&mut v);
         v.extend_from_slice(d.trace_label().as_bytes());
@@ -258,7 +262,7 @@ pub fn execute_opened(
     let matched = match_batch(band, params.rationing, &validated)
         .map_err(|e| ExecutorError::Execution(e.to_string()))?;
     metrics.stages.push(("match".into(), t.elapsed()));
-    let mut m = Vec::new();
+    let mut m = Vec::with_capacity(16 + matched.fills.len() * Fill::ENCODED_LEN);
     put_seq(&mut m, &matched.clearing);
     put_seq(&mut m, &matched.fills);
     trace.record("match", &m);
