@@ -18,7 +18,7 @@ use timescales_core::{Decode, Hash32};
 
 use crate::store::node::PutOutcome;
 use crate::store::sealer::sealed_generation;
-use crate::store::sql::{arr, bound, count, hash, int, now_ms, opt_uint32, row, uint32};
+use crate::store::sql::{arr, bound, count, exec, hash, int, now_ms, opt_uint32, row, uint32};
 use crate::store::{Address, PruneReport, RatchetSealer, Schema, Store, StoreError};
 
 /// Result of pinning a header for (market, epoch) and counting a release.
@@ -107,7 +107,7 @@ impl MemberRepo {
                     Some(d) if d == ann_digest => Ok(PutOutcome::Identical),
                     Some(_) => Ok(PutOutcome::Conflict),
                     None => {
-                        tx.execute(
+                        exec(tx,
                             "INSERT INTO announcements(market, epoch, announcement, ann_digest, received_at_ms)
                              VALUES (?1, ?2, ?3, ?4, ?5)",
                             params![m, epoch, ann, ann_digest.0, at],
@@ -131,7 +131,7 @@ impl MemberRepo {
                             "the share is sealed under an erased key generation",
                         ));
                     }
-                    tx.execute(
+                    exec(tx,
                         "INSERT INTO shares(market, epoch, ann_digest, kek_generation, share_sealed, received_at_ms)
                          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                         params![m, epoch, ann_digest.0, generation, sealed, at],
@@ -196,7 +196,8 @@ impl MemberRepo {
                 match pin {
                     None if max == 0 => Ok(PinOutcome::TooMany),
                     None => {
-                        tx.execute(
+                        exec(
+                            tx,
                             "INSERT INTO pins(market, epoch, header_digest, releases, pinned_at_ms)
                              VALUES (?1, ?2, ?3, 1, ?4)",
                             params![m, epoch, header_digest.0, int(now_ms())?],
@@ -206,7 +207,8 @@ impl MemberRepo {
                     Some((pinned, _)) if pinned != header_digest => Ok(PinOutcome::Other(pinned)),
                     Some((_, releases)) if releases >= max => Ok(PinOutcome::TooMany),
                     Some((_, releases)) => {
-                        tx.execute(
+                        exec(
+                            tx,
                             "UPDATE pins SET releases = ?3 WHERE market = ?1 AND epoch = ?2",
                             params![m, epoch, releases + 1],
                         )?;
@@ -220,7 +222,7 @@ impl MemberRepo {
     pub async fn audit(&self, row: ReleaseAudit) -> Result<(), StoreError> {
         self.member
             .write(move |tx| {
-                tx.execute(
+                exec(tx,
                     "INSERT INTO releases(market, epoch, executor, seal_key, header_digest, quote_hash, result, at_ms)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                     params![
@@ -249,7 +251,8 @@ impl MemberRepo {
         let destroyed = self
             .shares
             .write(move |tx| {
-                Ok(count(tx.execute(
+                Ok(count(exec(
+                    tx,
                     "DELETE FROM shares WHERE market = ?1 AND epoch <= ?2",
                     params![m, through],
                 )?))
@@ -257,16 +260,16 @@ impl MemberRepo {
             .await?;
         self.member
             .write(move |tx| {
-                tx.execute(
+                exec(tx,
                     "DELETE FROM pins WHERE market = ?1 AND epoch <= ?2",
                     params![m, through],
                 )?;
-                tx.execute(
+                exec(tx,
                     "DELETE FROM announcements WHERE market = ?1 AND epoch <= ?2",
                     params![m, through],
                 )?;
                 if pruned_through(tx, &m)?.is_none_or(|p| p < e) {
-                    tx.execute(
+                    exec(tx,
                         "INSERT INTO meta(k, v) VALUES (?1, ?2) ON CONFLICT(k) DO UPDATE SET v = excluded.v",
                         params![pruned_key(&m), e.to_le_bytes()],
                     )?;
@@ -349,30 +352,30 @@ impl MemberRepo {
             }
         }
         let sealer = Arc::clone(&self.sealer);
-        let replaced = self
-            .shares
-            .write(move |tx| match stored_digest(tx, "shares", &m, epoch)? {
-                None => Err(StoreError::Conflict("no share to rotate")),
-                Some(d) if d == ann_digest => Ok(false),
-                Some(_) => {
-                    if !sealer.has_generation(generation) {
-                        return Err(StoreError::Conflict(
-                            "the share is sealed under an erased key generation",
-                        ));
-                    }
-                    tx.execute(
+        let replaced =
+            self.shares
+                .write(move |tx| match stored_digest(tx, "shares", &m, epoch)? {
+                    None => Err(StoreError::Conflict("no share to rotate")),
+                    Some(d) if d == ann_digest => Ok(false),
+                    Some(_) => {
+                        if !sealer.has_generation(generation) {
+                            return Err(StoreError::Conflict(
+                                "the share is sealed under an erased key generation",
+                            ));
+                        }
+                        exec(tx,
                         "UPDATE shares SET ann_digest = ?3, kek_generation = ?4, share_sealed = ?5,
                            received_at_ms = ?6
                          WHERE market = ?1 AND epoch = ?2",
                         params![m, epoch, ann_digest.0, generation, sealed, at],
                     )?;
-                    Ok(true)
-                }
-            })
-            .await?;
+                        Ok(true)
+                    }
+                })
+                .await?;
         self.member
             .write(move |tx| {
-                tx.execute(
+                exec(tx,
                     "INSERT OR REPLACE INTO announcements(market, epoch, announcement, ann_digest, received_at_ms)
                      VALUES (?1, ?2, ?3, ?4, ?5)",
                     params![m, epoch, ann, ann_digest.0, at],
@@ -391,7 +394,8 @@ impl MemberRepo {
     pub async fn prune_audit(&self, older_than_ms: u64) -> Result<PruneReport, StoreError> {
         self.member
             .write(move |tx| {
-                let rows_deleted = count(tx.execute(
+                let rows_deleted = count(exec(
+                    tx,
                     "DELETE FROM releases WHERE at_ms < ?1",
                     [bound(older_than_ms)],
                 )?);

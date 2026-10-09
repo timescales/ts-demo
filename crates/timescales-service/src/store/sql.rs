@@ -88,6 +88,17 @@ pub(crate) fn flag(v: i64) -> Result<bool, StoreError> {
     }
 }
 
+/// Runs `sql` through the connection's statement cache. The writer repeats
+/// the same few dozen statements for the life of the process, so preparing
+/// each one once is the difference that matters on its single thread.
+pub(crate) fn exec<P: Params>(
+    conn: &Connection,
+    sql: &str,
+    params: P,
+) -> Result<usize, StoreError> {
+    Ok(conn.prepare_cached(sql)?.execute(params)?)
+}
+
 /// Every row `sql` returns, converted by `f`.
 pub(crate) fn rows<T, P: Params>(
     conn: &Connection,

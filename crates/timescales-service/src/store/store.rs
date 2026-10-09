@@ -17,7 +17,13 @@ use rusqlite::backup::{Backup, StepResult};
 use rusqlite::{Connection, OpenFlags, Transaction, TransactionBehavior};
 use tokio::sync::oneshot;
 
+use crate::store::sql::exec;
 use crate::store::{BackupReport, Schema, StoreError, StoreOptions};
+
+/// Prepared statements kept per connection. The node store alone runs about
+/// fifty distinct statements, and rusqlite's default of sixteen would evict
+/// them in rotation.
+const STATEMENT_CACHE: usize = 128;
 
 /// One database file: a writer on a dedicated `std::thread` fed by a
 /// bounded channel, and a pool of read-only connections.
@@ -151,6 +157,7 @@ impl Store {
                 | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )?;
         conn.busy_timeout(busy_timeout)?;
+        conn.set_prepared_statement_cache_capacity(STATEMENT_CACHE);
         let mode: String =
             conn.pragma_update_and_check(None, "journal_mode", "WAL", |row| row.get(0))?;
         if !mode.eq_ignore_ascii_case("wal") {
@@ -364,6 +371,7 @@ fn open_reader(path: &Path, busy_timeout: Duration) -> Result<Connection, StoreE
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )?;
     conn.busy_timeout(busy_timeout)?;
+    conn.set_prepared_statement_cache_capacity(STATEMENT_CACHE);
     conn.pragma_update(None, "trusted_schema", "OFF")?;
     Ok(conn)
 }
@@ -505,8 +513,8 @@ fn apply(
     finishes: &mut Vec<Finish>,
     state: &mut GroupState,
 ) {
-    if let Err(e) = tx.execute_batch("SAVEPOINT store_write") {
-        let error = StoreError::from(e);
+    if let Err(e) = exec(tx, "SAVEPOINT store_write", []) {
+        let error = e;
         job.reject(error.clone());
         *state = GroupState::Broken(error);
         return;
@@ -520,13 +528,12 @@ fn apply(
         return;
     }
     let end = match outcome {
-        Outcome::Applied => tx.execute_batch("RELEASE store_write"),
-        Outcome::Refused | Outcome::Failed(_) => {
-            tx.execute_batch("ROLLBACK TO store_write; RELEASE store_write")
-        }
+        Outcome::Applied => exec(tx, "RELEASE store_write", []),
+        Outcome::Refused | Outcome::Failed(_) => exec(tx, "ROLLBACK TO store_write", [])
+            .and_then(|_| exec(tx, "RELEASE store_write", [])),
     };
     if let Err(e) = end {
-        *state = GroupState::Broken(StoreError::from(e));
+        *state = GroupState::Broken(e);
     } else if let Outcome::Failed(error) = outcome {
         *state = GroupState::Failing(error);
     }
@@ -609,7 +616,7 @@ pub(crate) fn pre_migrate_copy(
     let target = partial
         .to_str()
         .ok_or(StoreError::Conflict("database path is not UTF-8"))?;
-    conn.execute("VACUUM INTO ?1", [target])?;
+    exec(conn, "VACUUM INTO ?1", [target])?;
     durable_rename(&partial, &dest)?;
     tracing::info!(copy = %dest.display(), from, to, "copied the database before migrating");
     Ok(dest)
@@ -778,7 +785,7 @@ mod tests {
         assert_eq!(store.schema_version(), 1);
         store
             .write(|tx| {
-                tx.execute("INSERT INTO a(v) VALUES ('kept')", [])?;
+                exec(tx, "INSERT INTO a(v) VALUES ('kept')", [])?;
                 Ok(())
             })
             .await

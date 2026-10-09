@@ -24,8 +24,8 @@ use timescales_core::{
 };
 
 use crate::store::sql::{
-    arr, bound, count, flag, hash, int, now_ms, opt_arr, opt_hash, opt_int, opt_uint, opt_uint8,
-    opt_uint32, placeholders, row, rows, uint, uint8, uint32,
+    arr, bound, count, exec, flag, hash, int, now_ms, opt_arr, opt_hash, opt_int, opt_uint,
+    opt_uint8, opt_uint32, placeholders, row, rows, uint, uint8, uint32,
 };
 use crate::store::{Address, BackupReport, PruneReport, Schema, Store, StoreError};
 
@@ -433,7 +433,7 @@ impl NodeRepo {
     pub async fn set_meta(&self, k: &'static str, v: Vec<u8>) -> Result<(), StoreError> {
         self.store
             .write(move |tx| {
-                tx.execute(
+                exec(tx,
                     "INSERT INTO meta(k, v) VALUES (?1, ?2) ON CONFLICT(k) DO UPDATE SET v = excluded.v",
                     params![k, v],
                 )?;
@@ -475,7 +475,7 @@ impl NodeRepo {
                         if served || opened || parked > 0 {
                             return Ok(PutOutcome::Conflict);
                         }
-                        tx.execute(
+                        exec(tx,
                             "UPDATE key_bundles SET bundle = ?3, received_at_ms = ?4
                              WHERE market = ?1 AND epoch = ?2",
                             params![m, epoch, bundle, at],
@@ -484,12 +484,12 @@ impl NodeRepo {
                         Ok(PutOutcome::Inserted)
                     }
                     None => {
-                        tx.execute(
+                        exec(tx,
                             "INSERT INTO key_bundles(market, epoch, bundle, received_at_ms)
                              VALUES (?1, ?2, ?3, ?4)",
                             params![m, epoch, bundle, at],
                         )?;
-                        tx.execute(
+                        exec(tx,
                             "INSERT INTO epochs(market, epoch, phase, updated_at_ms) VALUES (?1, ?2, ?3, ?4)
                              ON CONFLICT(market, epoch) DO NOTHING",
                             params![m, epoch, Phase::Scheduled.column(), at],
@@ -518,7 +518,8 @@ impl NodeRepo {
     pub async fn mark_bundle_served(&self, m: Address, e: u64) -> Result<(), StoreError> {
         self.store
             .write(move |tx| {
-                let changed = tx.execute(
+                let changed = exec(
+                    tx,
                     "UPDATE key_bundles SET served = 1 WHERE market = ?1 AND epoch = ?2",
                     params![m, int(e)?],
                 )?;
@@ -608,7 +609,7 @@ impl NodeRepo {
                             "injected envelope is not parked for this epoch",
                         ));
                     }
-                    tx.execute(
+                    exec(tx,
                         "INSERT OR IGNORE INTO submissions(market, epoch, commitment, envelope_digest,
                            wallet, session_pk, submission, promise, received_at_ms)
                          SELECT market, epoch, commitment, envelope_digest, wallet, session_pk,
@@ -617,7 +618,7 @@ impl NodeRepo {
                         params![row.market, epoch, c.0, wallet],
                     )?;
                 }
-                tx.execute(
+                exec(tx,
                     "DELETE FROM parked WHERE market = ?1 AND epoch = ?2",
                     params![row.market, epoch],
                 )?;
@@ -663,11 +664,11 @@ impl NodeRepo {
                     Some(_) => return Err(StoreError::Conflict("epoch is not open")),
                     None => return Err(StoreError::Conflict("no such epoch")),
                 }
-                tx.execute(
+                exec(tx,
                     "INSERT OR REPLACE INTO closed(market, epoch, closed, leaves) VALUES (?1, ?2, ?3, ?4)",
                     params![m, epoch, closed, leaves],
                 )?;
-                tx.execute(
+                exec(tx,
                     "UPDATE epochs SET phase = ?3, root = ?4, envelope_count = ?5, real_count = ?6,
                        cover_count = ?7, updated_at_ms = ?8
                      WHERE market = ?1 AND epoch = ?2",
@@ -850,7 +851,7 @@ impl NodeRepo {
                     params![m, wallet, c.0, bound(after)],
                     |r| uint(r.get(0)?),
                 )?;
-                tx.execute(
+                exec(tx,
                     "DELETE FROM parked WHERE market = ?1 AND wallet = ?2 AND commitment = ?3 AND epoch > ?4",
                     params![m, wallet, c.0, bound(after)],
                 )?;
@@ -866,7 +867,8 @@ impl NodeRepo {
             .write(move |tx| {
                 let mut deleted = 0;
                 for e in epochs {
-                    deleted += count(tx.execute(
+                    deleted += count(exec(
+                        tx,
                         "DELETE FROM parked WHERE market = ?1 AND epoch = ?2",
                         params![m, bound(e)],
                     )?);
@@ -890,9 +892,10 @@ impl NodeRepo {
         self.store
             .write(move |tx| {
                 let epoch = int(last_epoch)?;
-                tx.execute("DELETE FROM cover_carry WHERE market = ?1", params![m])?;
+                exec(tx, "DELETE FROM cover_carry WHERE market = ?1", params![m])?;
                 for (c, sealed_intent) in carried {
-                    tx.execute(
+                    exec(
+                        tx,
                         "INSERT INTO cover_carry(market, commitment, sealed_intent, last_epoch)
                          VALUES (?1, ?2, ?3, ?4)
                          ON CONFLICT(market, commitment) DO UPDATE
@@ -973,12 +976,14 @@ impl NodeRepo {
                 let keep = usize::try_from(max_per_wallet.max(1) - 1).unwrap_or(usize::MAX);
                 let evict = live.len().saturating_sub(keep);
                 for pk in &live[..evict] {
-                    tx.execute(
+                    exec(
+                        tx,
                         "UPDATE sessions SET revoked = 1 WHERE session_pk = ?1",
                         [pk],
                     )?;
                 }
-                tx.execute(
+                exec(
+                    tx,
                     &format!(
                         "INSERT INTO sessions({SESSION_COLUMNS})
                          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)"
@@ -1039,7 +1044,8 @@ impl NodeRepo {
     pub async fn revoke_session(&self, pk: [u8; 32]) -> Result<(), StoreError> {
         self.store
             .write(move |tx| {
-                tx.execute(
+                exec(
+                    tx,
                     "UPDATE sessions SET revoked = 1 WHERE session_pk = ?1",
                     [pk],
                 )?;
@@ -1052,7 +1058,8 @@ impl NodeRepo {
     pub async fn use_nonce(&self, nonce: [u8; 16], expires_at_ms: u64) -> Result<bool, StoreError> {
         self.store
             .write(move |tx| {
-                let inserted = tx.execute(
+                let inserted = exec(
+                    tx,
                     "INSERT INTO used_nonces(nonce, expires_at_ms) VALUES (?1, ?2)
                      ON CONFLICT(nonce) DO NOTHING",
                     params![nonce, int(expires_at_ms)?],
@@ -1072,7 +1079,8 @@ impl NodeRepo {
     ) -> Result<(), StoreError> {
         self.store
             .write(move |tx| {
-                tx.execute(
+                exec(
+                    tx,
                     "INSERT INTO bans(market, wallet, until_epoch, reason) VALUES (?1, ?2, ?3, ?4)
                      ON CONFLICT(market, wallet) DO UPDATE
                        SET until_epoch = excluded.until_epoch, reason = excluded.reason
@@ -1129,7 +1137,7 @@ impl NodeRepo {
                         "the snapshot is already part of a sealed header",
                     ));
                 }
-                tx.execute(
+                exec(tx,
                     "INSERT OR REPLACE INTO snapshots(market, epoch, sheet, slot) VALUES (?1, ?2, ?3, ?4)",
                     params![m, epoch, sheet, slot],
                 )?;
@@ -1173,7 +1181,7 @@ impl NodeRepo {
                     Some((h, b)) if h == header && b == batch => Ok(()),
                     Some(_) => Err(StoreError::Conflict("a different sealed batch is stored")),
                     None => {
-                        tx.execute(
+                        exec(tx,
                             "INSERT INTO sealed(market, epoch, header, batch) VALUES (?1, ?2, ?3, ?4)",
                             params![m, epoch, header, batch],
                         )?;
@@ -1221,7 +1229,8 @@ impl NodeRepo {
                 let n = uint32(last)?
                     .checked_add(1)
                     .ok_or(StoreError::Conflict("too many attempts"))?;
-                tx.execute(
+                exec(
+                    tx,
                     "INSERT INTO attempts(market, epoch, n, enclave, started_at_ms)
                      VALUES (?1, ?2, ?3, ?4, ?5)",
                     params![m, epoch, n, enclave, int(at_ms)?],
@@ -1241,7 +1250,8 @@ impl NodeRepo {
     ) -> Result<(), StoreError> {
         self.store
             .write(move |tx| {
-                let changed = tx.execute(
+                let changed = exec(
+                    tx,
                     "UPDATE attempts SET result = ?4, detail = ?5
                      WHERE market = ?1 AND epoch = ?2 AND n = ?3",
                     params![m, int(e)?, n, result, detail],
@@ -1302,7 +1312,7 @@ impl NodeRepo {
                 {
                     return Err(StoreError::Conflict("duplicate fill or delta index"));
                 }
-                tx.execute(
+                exec(tx,
                     "INSERT INTO results(market, epoch, receipt, artifacts, attestation, cosigs)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                     params![
@@ -1315,7 +1325,7 @@ impl NodeRepo {
                     ],
                 )?;
                 for f in &r.fills {
-                    tx.execute(
+                    exec(tx,
                         "INSERT INTO fills(market, epoch, idx, commitment, trader, book, side, role, qty, tick)
                          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
                         params![
@@ -1333,19 +1343,19 @@ impl NodeRepo {
                     )?;
                 }
                 for d in &r.deltas {
-                    tx.execute(
+                    exec(tx,
                         "INSERT INTO deltas(market, epoch, idx, trader, base, quote)
                          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                         params![r.market, epoch, d.idx, d.trader, d.base, d.quote],
                     )?;
                 }
                 for (idx, c) in (0u32..).zip(&r.cancelled) {
-                    tx.execute(
+                    exec(tx,
                         "INSERT INTO cancelled(market, epoch, idx, commitment) VALUES (?1, ?2, ?3, ?4)",
                         params![r.market, epoch, idx, c.0],
                     )?;
                 }
-                tx.execute(
+                exec(tx,
                     "INSERT OR REPLACE INTO order_state(market, epoch, tbl, root, confirmed)
                      VALUES (?1, ?2, ?3, ?4, 0)",
                     params![r.market, epoch, r.order_state, r.order_state_root.0],
@@ -1363,7 +1373,8 @@ impl NodeRepo {
                 if !exists(tx, "results", &m, epoch)? {
                     return Err(StoreError::Conflict("no stored result for this epoch"));
                 }
-                let changed = tx.execute(
+                let changed = exec(
+                    tx,
                     "UPDATE epochs SET artifacts_public = 1 WHERE market = ?1 AND epoch = ?2",
                     params![m, epoch],
                 )?;
@@ -1378,7 +1389,8 @@ impl NodeRepo {
     pub async fn confirm_order_state(&self, m: Address, e: u64) -> Result<(), StoreError> {
         self.store
             .write(move |tx| {
-                let changed = tx.execute(
+                let changed = exec(
+                    tx,
                     "UPDATE order_state SET confirmed = 1 WHERE market = ?1 AND epoch = ?2",
                     params![m, int(e)?],
                 )?;
@@ -1431,12 +1443,12 @@ impl NodeRepo {
                     let topic_seq = last
                         .checked_add(1)
                         .ok_or(StoreError::Conflict("topic sequence exhausted"))?;
-                    tx.execute(
+                    exec(tx,
                         "INSERT INTO events(market, topic, topic_seq, at_ms, event) VALUES (?1, ?2, ?3, ?4, ?5)",
                         params![market, topic, int(topic_seq)?, int(at_ms)?, event],
                     )?;
                     let seq = uint(tx.last_insert_rowid())?;
-                    tx.execute(
+                    exec(tx,
                         "INSERT INTO meta(k, v) VALUES (?1, ?2) ON CONFLICT(k) DO UPDATE SET v = excluded.v",
                         params![key, topic_seq.to_le_bytes()],
                     )?;
@@ -1659,7 +1671,7 @@ impl NodeRepo {
             .write(move |tx| {
                 let mut report = PruneReport::default();
                 let link_cutoff = now_ms.saturating_sub(r.wallet_link_hours.saturating_mul(HOUR_MS));
-                report.wallets_nulled = count(tx.execute(
+                report.wallets_nulled = count(exec(tx,
                     "UPDATE submissions SET wallet = NULL, session_pk = NULL
                      WHERE market = ?1 AND (wallet IS NOT NULL OR session_pk IS NOT NULL)
                        AND epoch IN (SELECT epoch FROM epochs
@@ -1673,30 +1685,30 @@ impl NodeRepo {
                 )?);
                 if let Some(through) = last_terminal.checked_sub(r.private_keep_epochs) {
                     for table in ["submissions", "parked", "closed", "snapshots", "sealed"] {
-                        report.rows_deleted += count(tx.execute(
+                        report.rows_deleted += count(exec(tx,
                             &format!("DELETE FROM {table} WHERE market = ?1 AND epoch <= ?2"),
                             params![m, bound(through)],
                         )?);
                     }
-                    report.rows_deleted += count(tx.execute(
+                    report.rows_deleted += count(exec(tx,
                         "DELETE FROM cover_carry WHERE market = ?1 AND last_epoch <= ?2",
                         params![m, bound(through)],
                     )?);
                 }
-                report.rows_deleted += count(tx.execute(
+                report.rows_deleted += count(exec(tx,
                     "DELETE FROM bans WHERE market = ?1 AND until_epoch <= ?2",
                     params![m, bound(last_terminal)],
                 )?);
                 let event_cutoff = now_ms.saturating_sub(r.event_log_hours.saturating_mul(HOUR_MS));
-                report.rows_deleted += count(tx.execute(
+                report.rows_deleted += count(exec(tx,
                     "DELETE FROM events WHERE at_ms < ?2 AND (market = ?1 OR market IS NULL)",
                     params![m, bound(event_cutoff)],
                 )?);
-                report.rows_deleted += count(tx.execute(
+                report.rows_deleted += count(exec(tx,
                     "DELETE FROM used_nonces WHERE expires_at_ms < ?1",
                     [bound(now_ms)],
                 )?);
-                report.rows_deleted += count(tx.execute(
+                report.rows_deleted += count(exec(tx,
                     "DELETE FROM sessions
                      WHERE (revoked = 1 OR expires_at_ms < ?1)
                        AND NOT EXISTS (SELECT 1 FROM submissions s WHERE s.session_pk = sessions.session_pk)
@@ -1715,7 +1727,7 @@ impl TxJournal for NodeRepo {
         Box::pin(async move {
             self.store
                 .write(move |tx| {
-                    tx.execute(
+                    exec(tx,
                         "INSERT INTO txs(market, epoch, op, signature, last_valid_block_height, status, sent_at_ms)
                          VALUES (?1, ?2, ?3, ?4, ?5, 'pending', ?6)",
                         params![
@@ -1745,7 +1757,8 @@ impl TxJournal for NodeRepo {
                         }
                         TxOutcome::Expired => ("expired", None, None),
                     };
-                    let changed = tx.execute(
+                    let changed = exec(
+                        tx,
                         "UPDATE txs SET status = ?2, slot = ?3, error = ?4 WHERE id = ?1",
                         params![id, status, opt_int(slot)?, error],
                     )?;
@@ -1870,7 +1883,7 @@ fn load_epoch(c: &Connection, m: &Address, epoch: i64) -> Result<Option<EpochRow
 
 /// Inserts or replaces the whole row.
 fn write_epoch(tx: &Transaction<'_>, r: &EpochRow) -> Result<(), StoreError> {
-    tx.execute(
+    exec(tx,
         &format!(
             "INSERT OR REPLACE INTO epochs({EPOCH_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9,
                ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26,
@@ -1975,7 +1988,8 @@ fn insert_envelope(
             InsertSubmission::SameCommitmentOtherBytes { promise }
         });
     }
-    tx.execute(
+    exec(
+        tx,
         &format!(
             "INSERT INTO {table}({ENVELOPE_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"
         ),
@@ -1992,7 +2006,8 @@ fn insert_envelope(
         ],
     )?;
     if let Some(pk) = s.session_pk {
-        tx.execute(
+        exec(
+            tx,
             "UPDATE sessions SET keep_until_epoch = max(COALESCE(keep_until_epoch, ?2), ?2)
              WHERE session_pk = ?1",
             params![pk, epoch],

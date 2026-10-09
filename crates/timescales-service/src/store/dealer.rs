@@ -15,7 +15,7 @@ use rusqlite::{Connection, params};
 use timescales_core::{Decode, Hash32};
 
 use crate::store::node::PutOutcome;
-use crate::store::sql::{bound, count, flag, int, now_ms, row, rows, uint, uint8};
+use crate::store::sql::{bound, count, exec, flag, int, now_ms, row, rows, uint, uint8};
 use crate::store::{Address, Schema, Store, StoreError};
 
 /// Everything recorded about one dealt epoch.
@@ -81,7 +81,7 @@ impl DealerRepo {
                 }
                 insert_dealing(tx, &m, epoch, &ann, &decoded)?;
                 for (member, sealed) in deliveries {
-                    tx.execute(
+                    exec(tx,
                         "INSERT INTO deliveries(market, epoch, member, sealed) VALUES (?1, ?2, ?3, ?4)",
                         params![m, epoch, member, sealed],
                     )?;
@@ -150,7 +150,7 @@ impl DealerRepo {
                 if stored_announcement(tx, &m, epoch)?.is_none() {
                     return Err(StoreError::Conflict("no dealing for this epoch"));
                 }
-                tx.execute(
+                exec(tx,
                     "INSERT INTO acks(market, epoch, member, ack, received_at_ms) VALUES (?1, ?2, ?3, ?4, ?5)
                      ON CONFLICT(market, epoch, member) DO UPDATE
                        SET ack = excluded.ack, received_at_ms = excluded.received_at_ms",
@@ -193,7 +193,8 @@ impl DealerRepo {
                     Some(stored) if stored == bundle => Ok(()),
                     Some(_) => Err(StoreError::Conflict("a different bundle is recorded")),
                     None => {
-                        tx.execute(
+                        exec(
+                            tx,
                             "INSERT INTO bundles(market, epoch, bundle, state, updated_at_ms)
                              VALUES (?1, ?2, ?3, 'intent', ?4)",
                             params![m, epoch, bundle, int(now_ms())?],
@@ -210,7 +211,8 @@ impl DealerRepo {
         self.store
             .write(move |tx| {
                 let epoch = int(e)?;
-                let changed = tx.execute(
+                let changed = exec(
+                    tx,
                     "UPDATE bundles SET state = 'delivered', updated_at_ms = ?3
                      WHERE market = ?1 AND epoch = ?2",
                     params![m, epoch, int(now_ms())?],
@@ -218,7 +220,8 @@ impl DealerRepo {
                 if changed == 0 {
                     return Err(StoreError::Conflict("no bundle intent for this epoch"));
                 }
-                tx.execute(
+                exec(
+                    tx,
                     "DELETE FROM deliveries WHERE market = ?1 AND epoch = ?2",
                     params![m, epoch],
                 )?;
@@ -234,7 +237,8 @@ impl DealerRepo {
     pub async fn prune_through(&self, m: Address, e: u64) -> Result<u64, StoreError> {
         self.store
             .write(move |tx| {
-                Ok(count(tx.execute(
+                Ok(count(exec(
+                    tx,
                     "DELETE FROM deliveries WHERE market = ?1 AND epoch <= ?2",
                     params![m, bound(e)],
                 )?))
@@ -287,7 +291,7 @@ impl DealerRepo {
                 }
                 let at = int(now_ms())?;
                 for (member, ack) in acks {
-                    tx.execute(
+                    exec(tx,
                         "INSERT INTO acks(market, epoch, member, ack, received_at_ms) VALUES (?1, ?2, ?3, ?4, ?5)
                          ON CONFLICT(market, epoch, member) DO NOTHING",
                         params![m, epoch, member, ack, at],
@@ -322,12 +326,14 @@ impl DealerRepo {
                 let at = int(now_ms())?;
                 for (epoch, ann_digest) in &victims {
                     for table in ["deliveries", "acks", "bundles", "dealings"] {
-                        tx.execute(
+                        exec(
+                            tx,
                             &format!("DELETE FROM {table} WHERE market = ?1 AND epoch = ?2"),
                             params![m, epoch],
                         )?;
                     }
-                    tx.execute(
+                    exec(
+                        tx,
                         "INSERT INTO superseded(market, epoch, committee_digest, ann_digest, at_ms)
                          VALUES (?1, ?2, ?3, ?4, ?5)",
                         params![m, epoch, old_committee.0, ann_digest, at],
@@ -384,7 +390,7 @@ fn insert_dealing(
     ann: &[u8],
     decoded: &EpochKeyAnnouncement,
 ) -> Result<(), StoreError> {
-    c.execute(
+    exec(c,
         "INSERT INTO dealings(market, epoch, announcement, ann_digest, committee_digest, created_at_ms)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         params![
