@@ -205,11 +205,8 @@ fn derive_key(
     salt[32..].copy_from_slice(recipient);
     let hk = Hkdf::<Sha256>::new(Some(&salt), shared);
     let mut okm = Zeroizing::new([0u8; 32]);
-    let mut full_info = Vec::with_capacity(domain::SEAL_KDF.len() + info.len());
-    full_info.extend_from_slice(domain::SEAL_KDF);
-    full_info.extend_from_slice(info);
     // 32 bytes is always a valid HKDF-SHA256 output length.
-    hk.expand(&full_info, okm.as_mut_slice())
+    hk.expand_multi_info(&[domain::SEAL_KDF, info], okm.as_mut_slice())
         .unwrap_or_else(|_| unreachable!());
     okm
 }

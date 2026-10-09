@@ -24,6 +24,10 @@ pub const PLAINTEXT_LEN: usize = 192;
 pub const CIPHERTEXT_LEN: usize = PLAINTEXT_LEN + TAG_LEN;
 /// version + market + epoch + commitment + ephemeral key + ciphertext.
 pub const ENVELOPE_LEN: usize = 1 + 8 + 8 + 32 + 32 + CIPHERTEXT_LEN;
+/// version + market + epoch + commitment, authenticated with every box.
+const AAD_LEN: usize = 1 + 8 + 8 + 32;
+/// "envelope" + market + epoch, the KDF context of every box.
+const KDF_INFO_LEN: usize = 8 + 8 + 8;
 
 const MAX_INTENT_LEN: usize = 1 + max(Order::ENCODED_LEN, Cancel::ENCODED_LEN) + 32 + 64;
 const _: () = assert!(MAX_INTENT_LEN <= PLAINTEXT_LEN);
@@ -55,19 +59,25 @@ impl core::fmt::Debug for SealedEnvelope {
 impl SealedEnvelope {
     /// Authenticated header. Moving an envelope to another market or epoch, or
     /// pairing it with another commitment, breaks decryption.
-    fn aad(version: u8, market: MarketId, epoch: EpochId, commitment: &OrderCommitment) -> Vec<u8> {
-        let mut a = Vec::with_capacity(1 + 8 + 8 + 32);
-        put_u8(&mut a, version);
-        market.encode(&mut a);
-        epoch.encode(&mut a);
-        commitment.encode(&mut a);
+    fn aad(
+        version: u8,
+        market: MarketId,
+        epoch: EpochId,
+        commitment: &OrderCommitment,
+    ) -> [u8; AAD_LEN] {
+        let mut a = [0u8; AAD_LEN];
+        a[0] = version;
+        a[1..9].copy_from_slice(&market.get().to_le_bytes());
+        a[9..17].copy_from_slice(&epoch.get().to_le_bytes());
+        a[17..].copy_from_slice(&commitment.0);
         a
     }
 
-    fn kdf_info(market: MarketId, epoch: EpochId) -> Vec<u8> {
-        let mut i = b"envelope".to_vec();
-        market.encode(&mut i);
-        epoch.encode(&mut i);
+    fn kdf_info(market: MarketId, epoch: EpochId) -> [u8; KDF_INFO_LEN] {
+        let mut i = [0u8; KDF_INFO_LEN];
+        i[..8].copy_from_slice(b"envelope");
+        i[8..16].copy_from_slice(&market.get().to_le_bytes());
+        i[16..].copy_from_slice(&epoch.get().to_le_bytes());
         i
     }
 
