@@ -10,6 +10,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, anyhow, bail};
+use axum::serve::ListenerExt;
 use timescales_chain::{FileSigner, HttpRpc, Level, MarketChain, SolanaRpc, TxSigner};
 use timescales_core::crypto::Keypair;
 use timescales_core::{Decode, Encode, EpochId};
@@ -431,7 +432,11 @@ pub async fn run(
         async move {
             let listener = tokio::net::TcpListener::bind(&addr)
                 .await
-                .with_context(|| format!("binding {addr}"))?;
+                .with_context(|| format!("binding {addr}"))?
+                // Stream frames and small replies leave as they are written.
+                .tap_io(|tcp| {
+                    let _ = tcp.set_nodelay(true);
+                });
             axum::serve(
                 listener,
                 router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
