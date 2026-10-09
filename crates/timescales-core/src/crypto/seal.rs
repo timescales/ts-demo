@@ -25,35 +25,46 @@ use crate::crypto::threshold::x25519_public;
 pub const TAG_LEN: usize = 16;
 
 /// X25519 secret key for a recipient (an epoch key or an MPC node key).
-pub struct SealSecret(StaticSecret);
+/// The public key is derived once: every box open needs it for the KDF
+/// salt, and deriving it costs a scalar multiplication.
+pub struct SealSecret {
+    secret: StaticSecret,
+    public: [u8; 32],
+}
 
 impl core::fmt::Debug for SealSecret {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "SealSecret(pub={:02x?}..)", &self.public()[..4])
+        write!(f, "SealSecret(pub={:02x?}..)", &self.public[..4])
     }
 }
 
 impl Zeroize for SealSecret {
     fn zeroize(&mut self) {
-        self.0.zeroize();
+        self.secret.zeroize();
+        self.public.zeroize();
     }
 }
 
 impl SealSecret {
     pub fn generate<R: RngCore + CryptoRng>(rng: &mut R) -> Self {
-        Self(StaticSecret::random_from_rng(rng))
+        Self::new(StaticSecret::random_from_rng(rng))
     }
 
     pub fn from_bytes(b: [u8; 32]) -> Self {
-        Self(StaticSecret::from(b))
+        Self::new(StaticSecret::from(b))
+    }
+
+    fn new(secret: StaticSecret) -> Self {
+        let public = PublicKey::from(&secret).to_bytes();
+        Self { secret, public }
     }
 
     pub fn to_bytes(&self) -> [u8; 32] {
-        self.0.to_bytes()
+        self.secret.to_bytes()
     }
 
     pub fn public(&self) -> [u8; 32] {
-        PublicKey::from(&self.0).to_bytes()
+        self.public
     }
 }
 
@@ -61,7 +72,10 @@ impl SealSecret {
 /// Its public key is `u(s*B)`, and boxes are opened with the unclamped
 /// Montgomery product `u(s*E)`.
 #[derive(Zeroize, ZeroizeOnDrop)]
-pub struct ScalarSealSecret(Scalar);
+pub struct ScalarSealSecret {
+    scalar: Scalar,
+    public: [u8; 32],
+}
 
 impl core::fmt::Debug for ScalarSealSecret {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -70,12 +84,13 @@ impl core::fmt::Debug for ScalarSealSecret {
 }
 
 impl ScalarSealSecret {
-    pub fn from_scalar(s: Scalar) -> Self {
-        Self(s)
+    pub fn from_scalar(scalar: Scalar) -> Self {
+        let public = x25519_public(&scalar);
+        Self { scalar, public }
     }
 
     pub fn scalar(&self) -> &Scalar {
-        &self.0
+        &self.scalar
     }
 
     /// The scalar form `clamp(k) mod L` of an X25519 secret `k`. It has the
@@ -84,12 +99,12 @@ impl ScalarSealSecret {
     /// held key can be dealt and opened through the threshold path.
     pub fn from_x25519(secret: &SealSecret) -> Self {
         let clamped = Zeroizing::new(clamp_integer(secret.to_bytes()));
-        Self(Scalar::from_bytes_mod_order(*clamped))
+        Self::from_scalar(Scalar::from_bytes_mod_order(*clamped))
     }
 
     /// `u(s*B)`: the X25519 public key traders seal to.
     pub fn public(&self) -> [u8; 32] {
-        x25519_public(&self.0)
+        self.public
     }
 
     /// `u(s*E)` for the ephemeral key `E` of a box.
@@ -114,7 +129,7 @@ impl ScalarSealSecret {
         if point.to_montgomery().to_bytes() != *ephemeral || !point.is_torsion_free() {
             return Err(CryptoError::InvalidPublicKey);
         }
-        let mut product = u * self.0;
+        let mut product = u * self.scalar;
         let shared = Zeroizing::new(product.to_bytes());
         product.zeroize();
         // Only s = 0 gets here, which no dealing produces.
@@ -166,7 +181,7 @@ impl EpochSecret {
             EpochSecret::Dev(s) => open(s, ephemeral, info, aad, ciphertext),
             EpochSecret::Threshold(s) => {
                 let shared = s.shared_secret(ephemeral)?;
-                decrypt(&shared, ephemeral, &s.public(), info, aad, ciphertext)
+                decrypt(&shared, ephemeral, &s.public, info, aad, ciphertext)
             }
         }
     }
@@ -264,14 +279,14 @@ pub fn open(
     aad: &[u8],
     ciphertext: &[u8],
 ) -> Result<Zeroizing<Vec<u8>>, CryptoError> {
-    let shared = secret.0.diffie_hellman(&PublicKey::from(*ephemeral));
+    let shared = secret.secret.diffie_hellman(&PublicKey::from(*ephemeral));
     if !shared.was_contributory() {
         return Err(CryptoError::InvalidPublicKey);
     }
     decrypt(
         shared.as_bytes(),
         ephemeral,
-        &secret.public(),
+        &secret.public,
         info,
         aad,
         ciphertext,
@@ -430,8 +445,8 @@ mod tests {
         dev.zeroize();
         assert_eq!(
             dev.public(),
-            SealSecret::from_bytes([0u8; 32]).public(),
-            "a zeroized dev key is the all-zero secret"
+            [0u8; 32],
+            "a zeroized dev key keeps no public key"
         );
         let mut threshold = threshold_secret(&mut rng);
         threshold.zeroize();
