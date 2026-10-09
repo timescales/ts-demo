@@ -28,7 +28,7 @@
 use ark_bn254::{Bn254, Fr};
 use ark_crypto_primitives::sponge::poseidon::PoseidonSponge;
 use ark_crypto_primitives::sponge::{CryptographicSponge, FieldBasedCryptographicSponge};
-use ark_groth16::{Groth16, Proof, VerifyingKey};
+use ark_groth16::{Groth16, PreparedVerifyingKey, Proof, VerifyingKey};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_snark::SNARK;
 use thiserror::Error;
@@ -289,12 +289,18 @@ pub fn decode_vk(bytes: &[u8]) -> Result<VerifyingKey<Bn254>, VerifyError> {
     VerifyingKey::deserialize_compressed(bytes).map_err(|_| VerifyError::Malformed("verifying key"))
 }
 
+/// Pairings that depend only on the key, done once per key rather than once
+/// per proof.
+pub fn prepare_vk(vk: &VerifyingKey<Bn254>) -> Result<PreparedVerifyingKey<Bn254>, VerifyError> {
+    Groth16::<Bn254>::process_vk(vk).map_err(|_| VerifyError::Malformed("verifying key"))
+}
+
 pub fn verify_proof(
-    vk: &VerifyingKey<Bn254>,
+    vk: &PreparedVerifyingKey<Bn254>,
     inputs: &PublicInputs,
     proof: &Proof<Bn254>,
 ) -> Result<(), VerifyError> {
-    match Groth16::<Bn254>::verify(vk, &inputs.to_field_elements(), proof) {
+    match Groth16::<Bn254>::verify_with_processed_vk(vk, &inputs.to_field_elements(), proof) {
         Ok(true) => Ok(()),
         Ok(false) => Err(VerifyError::Invalid),
         Err(_) => Err(VerifyError::Malformed("verification")),
@@ -308,6 +314,7 @@ pub fn verify_proof(
 pub struct ShapedVerifyingKey {
     shape: CircuitShape,
     vk: VerifyingKey<Bn254>,
+    prepared: PreparedVerifyingKey<Bn254>,
 }
 
 impl ShapedVerifyingKey {
@@ -323,7 +330,12 @@ impl ShapedVerifyingKey {
                 "verifying key does not fit the shape",
             ));
         }
-        Ok(Self { shape, vk })
+        let prepared = prepare_vk(&vk)?;
+        Ok(Self {
+            shape,
+            vk,
+            prepared,
+        })
     }
 
     pub fn from_bytes(shape: CircuitShape, vk_bytes: &[u8]) -> Result<Self, VerifyError> {
@@ -351,8 +363,8 @@ impl ShapedVerifyingKey {
         if bundle.shape != self.shape {
             return Err(VerifyError::Shape("bundle shape differs from the key's"));
         }
-        verify_bundle(
-            &self.vk,
+        verify_bundle_prepared(
+            &self.prepared,
             bundle,
             header,
             commitments,
@@ -371,6 +383,27 @@ impl ShapedVerifyingKey {
 /// the shape to the key's.
 pub fn verify_bundle(
     vk: &VerifyingKey<Bn254>,
+    bundle: &ProofBundle,
+    header: &BatchHeader,
+    commitments: &[OrderCommitment],
+    prior: &OrderStateTable,
+    artifacts: &ExecutionArtifacts,
+    clearing: &[timescales_core::ClearingPrice],
+) -> Result<(), VerifyError> {
+    verify_bundle_prepared(
+        &prepare_vk(vk)?,
+        bundle,
+        header,
+        commitments,
+        prior,
+        artifacts,
+        clearing,
+    )
+}
+
+/// [`verify_bundle`] with the key's pairings already done.
+pub fn verify_bundle_prepared(
+    vk: &PreparedVerifyingKey<Bn254>,
     bundle: &ProofBundle,
     header: &BatchHeader,
     commitments: &[OrderCommitment],
