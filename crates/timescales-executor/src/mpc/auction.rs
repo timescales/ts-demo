@@ -24,7 +24,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use timescales_auction::clearing::tie_break_rank;
+use timescales_auction::clearing::tie_break_ranks;
 use timescales_auction::collateral::{BalanceSheet, buy_lock_per_lot};
 use timescales_auction::orderbook::{OrderStateTable, fee_for};
 use timescales_auction::{BatchHeader, canonical_order_by};
@@ -400,8 +400,9 @@ fn run_inner(
 
     // Tournament over slots in tie-break order: left always ranks better,
     // so "left wins full ties" implements the final tie-break.
+    let ranks = tie_break_ranks(band);
     let mut ranked: Vec<u32> = (0..k as u32).collect();
-    ranked.sort_by_key(|&p| tie_break_rank(band, p));
+    ranked.sort_by_key(|&p| ranks[p as usize]);
     let per_book = |v: &Shared| -> Shared {
         v.gather(
             &(0..nb)

@@ -135,6 +135,18 @@ pub fn tie_break_rank(band: &PriceBand, slot: u32) -> u32 {
     u32::try_from(better).unwrap_or(u32::MAX)
 }
 
+/// [`tie_break_rank`] of every slot at once, indexed by slot. One sort
+/// instead of a scan per slot, for the backends that rank the whole band.
+pub fn tie_break_ranks(band: &PriceBand) -> Vec<u32> {
+    let mut order: Vec<u32> = (0..band.ticks()).collect();
+    order.sort_unstable_by_key(|&q| (band.distance_to_reference(q), q));
+    let mut ranks = vec![0u32; order.len()];
+    for (rank, &slot) in (0u32..).zip(&order) {
+        ranks[slot as usize] = rank;
+    }
+    ranks
+}
+
 /// Apply the clearing rule. `curves` must have been built for `band`.
 pub fn clear(curves: &Curves, band: &PriceBand) -> Clearing {
     let ticks = curves.ticks();
@@ -238,6 +250,22 @@ mod tests {
         assert_eq!(ranks[3], 2);
         ranks.sort_unstable();
         assert_eq!(ranks, (0..9).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn ranks_table_matches_the_rank_function() {
+        for (ticks, reference) in [(1, 0), (9, 2), (9, 8), (64, 31), (65, 32)] {
+            let b = band(ticks, reference);
+            let table = tie_break_ranks(&b);
+            assert_eq!(table.len(), ticks as usize);
+            for s in 0..ticks {
+                assert_eq!(
+                    table[s as usize],
+                    tie_break_rank(&b, s),
+                    "band {ticks} slot {s}"
+                );
+            }
+        }
     }
 
     #[test]
