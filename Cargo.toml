@@ -58,7 +58,7 @@ rayon = "1.10"
 futures = "0.3"
 curve25519-dalek = { version = "4", features = ["rand_core", "zeroize"] }
 hmac = "0.12"
-ark-ff = "0.6"
+ark-ff = { version = "0.6", features = ["asm"] }
 ark-ec = "0.6"
 ark-bn254 = "0.6"
 ark-std = "0.6"
