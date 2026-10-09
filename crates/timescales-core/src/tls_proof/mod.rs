@@ -233,20 +233,23 @@ impl Openings {
             return Err(TlsProofError::NothingToDisclose);
         }
         let sent_chunks = self.transcript.sent.len().div_ceil(CHUNK);
-        let disclosures = (range.start / CHUNK..=(end - 1) / CHUNK)
-            .map(|i| {
-                // i < received chunks, so leaf < salts.len.
-                let leaf = sent_chunks + i;
+        let chunks = range.start / CHUNK..=(end - 1) / CHUNK;
+        // i < received chunks, so every leaf < salts.len.
+        let leaves: Vec<usize> = chunks.clone().map(|i| sent_chunks + i).collect();
+        let proofs = self
+            .tree
+            .proofs_for(&leaves)
+            .map_err(|_| TlsProofError::BadDisclosure)?;
+        let disclosures = chunks
+            .zip(proofs)
+            .map(|(i, proof)| {
                 let at = i * CHUNK;
                 Ok(Disclosure {
                     direction: Direction::Received,
                     index: u32::try_from(i).map_err(|_| TlsProofError::TooLarge)?,
-                    salt: self.salts[leaf],
+                    salt: self.salts[sent_chunks + i],
                     bytes: received[at..received.len().min(at + CHUNK)].to_vec(),
-                    proof: self
-                        .tree
-                        .proof(leaf)
-                        .map_err(|_| TlsProofError::BadDisclosure)?,
+                    proof,
                 })
             })
             .collect::<Result<_, TlsProofError>>()?;

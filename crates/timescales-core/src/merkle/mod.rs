@@ -117,26 +117,45 @@ impl MerkleTree {
     /// once, so all `n` proofs cost `O(n)` hashing instead of `O(n)` each.
     pub fn proofs_all(&self) -> Vec<InclusionProof> {
         let levels = self.levels();
-        let below_root = &levels[..levels.len() - 1];
         (0..self.leaves.len())
-            .map(|index| {
-                let mut path = Vec::with_capacity(below_root.len());
-                let mut at = index;
-                for level in below_root {
-                    // A left node at the end of its level has no sibling and
-                    // was promoted unchanged.
-                    if let Some(sibling) = level.get(at ^ 1) {
-                        path.push(*sibling);
-                    }
-                    at >>= 1;
-                }
-                InclusionProof {
-                    index: index as u64,
-                    tree_size: self.leaves.len() as u64,
-                    path,
-                }
-            })
+            .map(|index| self.proof_from_levels(&levels, index))
             .collect()
+    }
+
+    /// Inclusion proofs for the given leaves, in the order given. One pass
+    /// over the tree serves them all, so disclosing many leaves costs the
+    /// same hashing as disclosing one.
+    pub fn proofs_for(&self, indices: &[usize]) -> Result<Vec<InclusionProof>, MerkleError> {
+        if let Some(&index) = indices.iter().find(|&&i| i >= self.leaves.len()) {
+            return Err(MerkleError::IndexOutOfRange {
+                index: index as u64,
+                size: self.leaves.len() as u64,
+            });
+        }
+        let levels = self.levels();
+        Ok(indices
+            .iter()
+            .map(|&index| self.proof_from_levels(&levels, index))
+            .collect())
+    }
+
+    fn proof_from_levels(&self, levels: &[Vec<Hash32>], index: usize) -> InclusionProof {
+        let below_root = &levels[..levels.len() - 1];
+        let mut path = Vec::with_capacity(below_root.len());
+        let mut at = index;
+        for level in below_root {
+            // A left node at the end of its level has no sibling and was
+            // promoted unchanged.
+            if let Some(sibling) = level.get(at ^ 1) {
+                path.push(*sibling);
+            }
+            at >>= 1;
+        }
+        InclusionProof {
+            index: index as u64,
+            tree_size: self.leaves.len() as u64,
+            path,
+        }
     }
 
     /// Audit path for `index`, ordered from the leaf upwards.
