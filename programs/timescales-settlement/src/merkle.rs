@@ -14,14 +14,17 @@ pub const MARKET_ID: &[u8] = b"timescales/v1/market-id";
 pub const EPOCH_TERMS: &[u8] = b"timescales/v1/epoch-terms";
 pub const RECEIPT_COSIGN: &[u8] = b"timescales/v1/receipt-cosign";
 
-/// `SHA-256(len(tag) || tag || parts...)`, over every part.
+/// Most parts any caller passes: the beacon hashes nine.
+const MAX_PARTS: usize = 9;
+
+/// `SHA-256(len(tag) || tag || parts...)`, over every part, in one syscall.
 pub fn hash(tag: &[u8], parts: &[&[u8]]) -> [u8; 32] {
     let len = [tag.len() as u8];
-    let mut all: Vec<&[u8]> = Vec::with_capacity(parts.len() + 2);
-    all.push(&len);
-    all.push(tag);
-    all.extend_from_slice(parts);
-    hashv(&all).to_bytes()
+    let mut all: [&[u8]; MAX_PARTS + 2] = [&[]; MAX_PARTS + 2];
+    all[0] = &len;
+    all[1] = tag;
+    all[2..2 + parts.len()].copy_from_slice(parts);
+    hashv(&all[..2 + parts.len()]).to_bytes()
 }
 
 pub fn leaf(data: &[u8]) -> [u8; 32] {

@@ -23,6 +23,10 @@ pub const SYSTEM_PROGRAM: Pubkey = solana_program::pubkey!("11111111111111111111
 pub const MINT_LEN: usize = 82;
 pub const TOKEN_ACCOUNT_LEN: usize = 165;
 
+/// Most seeds a PDA of this program has before its bump: the trader and
+/// batch accounts use three.
+const MAX_SEEDS: usize = 3;
+
 fn system_ix(accounts: Vec<AccountMeta>, data: Vec<u8>) -> Instruction {
     Instruction {
         program_id: SYSTEM_PROGRAM,
@@ -70,9 +74,10 @@ pub fn init_pda<'a>(
         TimescalesError::InvalidAccount,
     )?;
     let bump_seed = [bump];
-    let mut signer: Vec<&[u8]> = seeds.to_vec();
-    signer.push(&bump_seed);
-    let signer = [signer.as_slice()];
+    let mut signer: [&[u8]; MAX_SEEDS + 1] = [&[]; MAX_SEEDS + 1];
+    signer[..seeds.len()].copy_from_slice(seeds);
+    signer[seeds.len()] = &bump_seed;
+    let signer = [&signer[..=seeds.len()]];
     let rent = Rent::get()?.minimum_balance(space);
     let space_le = (space as u64).to_le_bytes();
     let owner = program_id.to_bytes();
