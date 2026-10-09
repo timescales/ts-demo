@@ -12,6 +12,7 @@ use timescales_chain::Address;
 use timescales_core::crypto::Signature;
 use timescales_core::{ExecutorId, Hash32, OrderCommitment};
 use timescales_executor::attestation::{Evidence, Platform};
+use timescales_node::events::LiveEvent;
 use timescales_node::{
     AdminCmd, AdminReply, BoxFuture, EventsSince, ExecClient, ExecClientError, NodeApi, NodeError,
     SessionError, SessionRef, SubmitError, VerifiedSubmission,
@@ -122,7 +123,7 @@ struct FakeNode {
     details: BTreeMap<Address, MarketDetail>,
     current: BTreeMap<Address, CurrentEpoch>,
     sessions: Mutex<BTreeMap<[u8; 32], Session>>,
-    events: broadcast::Sender<StreamEvent>,
+    events: broadcast::Sender<Arc<LiveEvent>>,
     repo: Option<NodeRepo>,
     log: Mutex<Vec<String>>,
 }
@@ -273,7 +274,7 @@ impl NodeApi for FakeNode {
         })
     }
 
-    fn events(&self) -> broadcast::Receiver<StreamEvent> {
+    fn events(&self) -> broadcast::Receiver<Arc<LiveEvent>> {
         self.events.subscribe()
     }
 

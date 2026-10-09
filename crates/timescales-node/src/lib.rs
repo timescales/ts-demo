@@ -261,7 +261,7 @@ pub trait NodeApi: Send + Sync {
     ) -> BoxFuture<'_, Result<Session, SessionError>>;
     fn session(&self, key: [u8; 32]) -> BoxFuture<'_, Result<Option<Session>, NodeError>>;
     fn revoke_session(&self, key: [u8; 32]) -> BoxFuture<'_, Result<(), NodeError>>;
-    fn events(&self) -> broadcast::Receiver<StreamEvent>;
+    fn events(&self) -> broadcast::Receiver<Arc<events::LiveEvent>>;
     fn events_since(
         &self,
         seq: u64,

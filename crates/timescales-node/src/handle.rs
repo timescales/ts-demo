@@ -23,8 +23,8 @@ use timescales_service::api::{
     MintAuthorities, MintAuthority, MpcStatus, Notice, NoticeLevel, Observation, OpenEpoch,
     OverallStatus, PaddingView, ParkedItem, PendingChangeView, PriceCommitmentView, ProfileJson,
     ProgramView, QuoteGeneration, QuoteVerification, RealSlotsLeft, ReferencePrice,
-    RelayPolicyView, RetractResult, Session, SessionNonce, Status, StatusComponent, StreamEvent,
-    SubmitResult, TimingView, Trust, U64,
+    RelayPolicyView, RetractResult, Session, SessionNonce, Status, StatusComponent, SubmitResult,
+    TimingView, Trust, U64,
 };
 use timescales_service::relay::{CarryingCover, Padding, Relay, RelayConfig};
 use timescales_service::store::node::{NodeRepo, Retention};
@@ -38,7 +38,7 @@ use crate::config::{
     Cluster, ExpectedPlatform, IdlePolicyConfig, MarketConfig, MarketFiles, NodeConfig,
     PaddingConfig, ReferenceSource,
 };
-use crate::events::EventBus;
+use crate::events::{EventBus, LiveEvent};
 use crate::exec::{EnclaveInfo, Enclaves};
 use crate::intake::{Eligibility, Intake};
 use crate::keys::KeyDirectory;
@@ -1069,7 +1069,7 @@ impl NodeApi for NodeHandle {
         Box::pin(async move { self.inner.sessions.revoke(key).await })
     }
 
-    fn events(&self) -> broadcast::Receiver<StreamEvent> {
+    fn events(&self) -> broadcast::Receiver<Arc<LiveEvent>> {
         self.inner.events.subscribe()
     }
 

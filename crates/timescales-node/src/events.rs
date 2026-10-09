@@ -4,10 +4,14 @@
 //! resume. `stream_id` changes on every boot, so a client that saw another
 //! stream resyncs over REST.
 
+use std::ops::Deref;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use timescales_service::api::{B58, Event, STATUS_TOPIC, StreamEvent, U64, market_topic};
+use axum::extract::ws::Utf8Bytes;
+use timescales_service::api::{
+    B58, Event, STATUS_TOPIC, ServerFrame, ServerMessage, StreamEvent, U64, market_topic,
+};
 use timescales_service::store::StoreError;
 use timescales_service::store::node::{NodeRepo, StoredEvent};
 use tokio::sync::{Mutex, broadcast};
@@ -21,9 +25,42 @@ pub const BROADCAST_PER_MARKET: usize = 1024;
 /// resyncs.
 const MAX_REPLAY: u32 = 10_000;
 
+/// What subscribers receive: a stream event with its frame serialised
+/// once for every connection.
+#[derive(Debug)]
+pub struct LiveEvent {
+    stream: StreamEvent,
+    frame: Utf8Bytes,
+}
+
+impl LiveEvent {
+    pub fn new(stream: StreamEvent) -> Arc<Self> {
+        // Frames are plain data. Serializing them cannot fail.
+        let frame = serde_json::to_string(&ServerFrame::new(ServerMessage::Event(stream.clone())))
+            .unwrap_or_default();
+        Arc::new(Self {
+            stream,
+            frame: frame.into(),
+        })
+    }
+
+    /// The event's frame, as it goes on the wire.
+    pub fn frame(&self) -> &Utf8Bytes {
+        &self.frame
+    }
+}
+
+impl Deref for LiveEvent {
+    type Target = StreamEvent;
+
+    fn deref(&self) -> &StreamEvent {
+        &self.stream
+    }
+}
+
 pub struct EventBus {
     repo: Arc<NodeRepo>,
-    tx: broadcast::Sender<StreamEvent>,
+    tx: broadcast::Sender<Arc<LiveEvent>>,
     /// Serializes append and broadcast, so subscribers see events in `seq`
     /// order.
     order: Mutex<()>,
@@ -74,7 +111,7 @@ impl EventBus {
         self.head.load(Ordering::Acquire)
     }
 
-    pub fn subscribe(&self) -> broadcast::Receiver<StreamEvent> {
+    pub fn subscribe(&self) -> broadcast::Receiver<Arc<LiveEvent>> {
         self.tx.subscribe()
     }
 
@@ -107,7 +144,7 @@ impl EventBus {
             };
             self.head.fetch_max(seq, Ordering::AcqRel);
             // No receiver is fine: nobody is subscribed.
-            let _ = self.tx.send(e.clone());
+            let _ = self.tx.send(LiveEvent::new(e.clone()));
             out.push(e);
         }
         Ok(out)

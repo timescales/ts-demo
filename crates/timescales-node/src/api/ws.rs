@@ -15,11 +15,11 @@
 //! admitted, since the check exists to stop other sites' pages.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
-use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade};
+use axum::extract::ws::{CloseFrame, Message, Utf8Bytes, WebSocket, WebSocketUpgrade};
 use axum::extract::{FromRequest, Request, State};
 use axum::http::{HeaderMap, HeaderValue};
 use axum::response::{IntoResponse, Response};
@@ -27,7 +27,7 @@ use futures::{SinkExt, StreamExt};
 use parking_lot::Mutex;
 use timescales_service::api::{
     B58, ClientMessage, ErrorCode, Hex, RateLimitScope, ResyncReason, STATUS_TOPIC,
-    STREAM_SUBPROTOCOL, ServerFrame, ServerMessage, StreamEvent, U64,
+    STREAM_SUBPROTOCOL, ServerFrame, ServerMessage, U64,
 };
 use tokio::sync::{broadcast, mpsc};
 
@@ -35,6 +35,7 @@ use super::Ctx;
 use super::errors::ApiError;
 use super::limits::{Gcra, IpKey, NodeClock, origin_allowed, peer_of, request_ip_key};
 use crate::EventsSince;
+use crate::events::LiveEvent;
 
 /// Close codes.
 pub(crate) const CLOSE_BAD_MESSAGE: u16 = 4001;
@@ -169,7 +170,7 @@ struct Floor {
 
 struct Conn {
     ctx: Ctx,
-    out: mpsc::Sender<String>,
+    out: mpsc::Sender<Utf8Bytes>,
     topics: BTreeMap<String, Floor>,
     head_seq: u64,
     inbound: Gcra<u8>,
@@ -192,8 +193,8 @@ fn topic_key(topic: &str) -> &'static str {
 
 impl Conn {
     /// Queues a frame. A full queue means the client cannot keep up.
-    fn send(&self, text: String) -> Result<(), End> {
-        match self.out.try_send(text) {
+    fn send(&self, text: impl Into<Utf8Bytes>) -> Result<(), End> {
+        match self.out.try_send(text.into()) {
             Ok(()) => Ok(()),
             Err(mpsc::error::TrySendError::Full(_)) => Err(End::Close(CLOSE_LAGGED, "lagged")),
             Err(mpsc::error::TrySendError::Closed(_)) => Err(End::Gone),
@@ -203,7 +204,7 @@ impl Conn {
     /// Queues a frame and waits for room: answers to a subscribe, whose
     /// number the subscription limit bounds, and replays.
     async fn send_wait(&self, text: String) -> Result<(), End> {
-        self.out.send(text).await.map_err(|_| End::Gone)
+        self.out.send(text.into()).await.map_err(|_| End::Gone)
     }
 
     fn valid_topic(&self, topic: &str) -> bool {
@@ -452,16 +453,16 @@ impl Conn {
         Ok(())
     }
 
-    fn on_event(&mut self, event: StreamEvent) -> Result<(), End> {
-        self.head_seq = self.head_seq.max(event.seq.0);
-        let Some(floor) = self.topics.get_mut(&event.topic) else {
+    fn on_event(&mut self, live: Arc<LiveEvent>) -> Result<(), End> {
+        self.head_seq = self.head_seq.max(live.seq.0);
+        let Some(floor) = self.topics.get_mut(&live.topic) else {
             return Ok(());
         };
-        if event.seq.0 <= floor.seq || event.topic_seq.0 <= floor.topic_seq {
+        if live.seq.0 <= floor.seq || live.topic_seq.0 <= floor.topic_seq {
             return Ok(());
         }
-        floor.topic_seq = event.topic_seq.0;
-        self.send(frame(ServerMessage::Event(event)))
+        floor.topic_seq = live.topic_seq.0;
+        self.send(live.frame().clone())
     }
 
     fn heartbeat(&self) -> Result<(), End> {
@@ -487,14 +488,14 @@ struct CloseRequest {
 /// flushes, then the close frame, within a second.
 async fn finish(
     sink: &mut futures::stream::SplitSink<WebSocket, Message>,
-    out: &mut mpsc::Receiver<String>,
+    out: &mut mpsc::Receiver<Utf8Bytes>,
     close: Option<CloseRequest>,
 ) {
     let Some(c) = close else { return };
     let mut pending = Vec::new();
     if c.flush {
         while let Ok(text) = out.try_recv() {
-            pending.push(Message::Text(text.into()));
+            pending.push(Message::Text(text));
         }
     }
     pending.push(Message::Close(Some(CloseFrame {
@@ -516,7 +517,7 @@ async fn finish(
 /// client that does not read.
 async fn writer(
     mut sink: futures::stream::SplitSink<WebSocket, Message>,
-    mut out: mpsc::Receiver<String>,
+    mut out: mpsc::Receiver<Utf8Bytes>,
     mut close: mpsc::Receiver<CloseRequest>,
 ) {
     loop {
@@ -534,7 +535,7 @@ async fn writer(
                         finish(&mut sink, &mut out, c).await;
                         return;
                     }
-                    sent = sink.send(Message::Text(text.into())) => {
+                    sent = sink.send(Message::Text(text)) => {
                         if sent.is_err() {
                             return;
                         }
