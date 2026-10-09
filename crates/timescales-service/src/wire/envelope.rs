@@ -332,6 +332,34 @@ impl SignedEnvelope {
         out
     }
 
+    /// [`Self::from_prefix`] over the tail as it arrived: the body keeps
+    /// that buffer and only the signature is split off, so a request body
+    /// is not copied a second time.
+    pub fn from_prefix_owned(
+        prefix: &EnvelopePrefix,
+        mut tail: Vec<u8>,
+    ) -> Result<Self, WireError> {
+        check_body_len(prefix.kind, prefix.body_len)?;
+        let body_len = usize::try_from(prefix.body_len).unwrap_or(usize::MAX);
+        if tail.len() < body_len {
+            return Self::from_prefix(prefix, &tail);
+        }
+        let sig = tail.split_off(body_len);
+        let mut r = Reader::new(&sig);
+        let signature = Signature::decode(&mut r)?;
+        r.finish()?;
+        Ok(SignedEnvelope {
+            version: prefix.version,
+            kind: prefix.kind,
+            sender: prefix.sender,
+            audience: prefix.audience,
+            issued_at_ms: prefix.issued_at_ms,
+            nonce: prefix.nonce,
+            body: tail,
+            signature,
+        })
+    }
+
     /// The envelope whose prefix was already read and checked, from the
     /// `body_len + 64` bytes that follow it.
     pub fn from_prefix(prefix: &EnvelopePrefix, rest: &[u8]) -> Result<Self, WireError> {

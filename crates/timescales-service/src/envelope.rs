@@ -171,7 +171,7 @@ where
             }
         }
 
-        let env = SignedEnvelope::from_prefix(&p, &tail)?;
+        let env = SignedEnvelope::from_prefix_owned(&p, tail)?;
         let now = (auth.now_ms)();
         env.open(&auth.me, &*auth.allowed, now, auth.skew_ms)?;
         auth.replay
