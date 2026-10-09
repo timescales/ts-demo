@@ -40,10 +40,23 @@ impl<'a> Cursor<'a> {
         Ok(s)
     }
 
+    /// `N` bytes, borrowed.
+    pub fn fixed<const N: usize>(&mut self) -> Result<&'a [u8; N], ProgramError> {
+        self.take(N)?
+            .try_into()
+            .map_err(|_| TimescalesError::InvalidInstruction.into())
+    }
+
+    /// `n` runs of `N` bytes, borrowed.
+    pub fn chunks<const N: usize>(&mut self, n: usize) -> Result<&'a [[u8; N]], ProgramError> {
+        let len = n
+            .checked_mul(N)
+            .ok_or(TimescalesError::InvalidInstruction)?;
+        Ok(self.take(len)?.as_chunks::<N>().0)
+    }
+
     fn array<const N: usize>(&mut self) -> Result<[u8; N], ProgramError> {
-        let mut a = [0u8; N];
-        a.copy_from_slice(self.take(N)?);
-        Ok(a)
+        Ok(*self.fixed()?)
     }
 
     pub fn u8(&mut self) -> Result<u8, ProgramError> {

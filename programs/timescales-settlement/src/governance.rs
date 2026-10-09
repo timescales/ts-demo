@@ -245,11 +245,11 @@ pub fn accept_admin(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramRes
 pub fn remove_executor(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
-    key: [u8; 32],
+    key: &[u8; 32],
 ) -> ProgramResult {
     let (market_acc, mut m) = admin_market(program_id, accounts)?;
     let slot = m
-        .executor_slot(&key)
+        .executor_slot(key)
         .ok_or(TimescalesError::UnknownExecutor)?;
     m.executors[slot] = [0u8; 32];
     m.executor_count = m.executor_count.saturating_sub(1);

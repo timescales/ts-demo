@@ -44,7 +44,7 @@ pub fn process(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8]) -> Pr
         } => commit_batch(program_id, accounts, epoch, root, count, terms_digest),
         Instruction::RevealBeacon => reveal_beacon(program_id, accounts),
         Instruction::PostReceipt { header, receipt } => {
-            post_receipt(program_id, accounts, &header, &receipt)
+            post_receipt(program_id, accounts, header, receipt)
         }
         Instruction::CoSignReceipt => cosign_receipt(program_id, accounts),
         Instruction::VerifyDeltas { leaves } => verify_deltas(program_id, accounts, &leaves),
@@ -55,7 +55,7 @@ pub fn process(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8]) -> Pr
         Instruction::ReclaimBatch => reclaim_batch(program_id, accounts),
         Instruction::SetHalted { halted } => governance::set_halted(program_id, accounts, halted),
         Instruction::ProposeChange { kind, payload } => {
-            governance::propose_change(program_id, accounts, kind, &payload)
+            governance::propose_change(program_id, accounts, kind, payload)
         }
         Instruction::ApplyChange => governance::apply_change(program_id, accounts),
         Instruction::CancelChange => governance::cancel_change(program_id, accounts),
@@ -215,13 +215,13 @@ fn init_market(program_id: &Pubkey, accounts: &[AccountInfo], a: &InitMarket) ->
 
     require(creator.is_signer, TimescalesError::Unauthorised)?;
     require(
-        a.market_id == derive_market_id(program_id, creator.key, &a.salt),
+        a.market_id == derive_market_id(program_id, creator.key, a.salt),
         TimescalesError::InvalidMarketId,
     )?;
     let id = a.market_id.to_le_bytes();
     let bump = pda_bump(program_id, market, &[b"market", &id])?;
     require(
-        params_valid(&a.params, a.market_id)?,
+        params_valid(a.params, a.market_id)?,
         TimescalesError::InvalidParams,
     )?;
     check_mint(base_mint)?;
@@ -237,10 +237,10 @@ fn init_market(program_id: &Pubkey, accounts: &[AccountInfo], a: &InitMarket) ->
         TimescalesError::InvalidTokenAccount,
     )?;
     require(
-        governance::executors_valid(&a.executors, a.receipt_quorum)
-            && a.admin != [0u8; 32]
-            && a.relay != [0u8; 32]
-            && a.committee_digest != [0u8; 32]
+        governance::executors_valid(a.executors, a.receipt_quorum)
+            && *a.admin != [0u8; 32]
+            && *a.relay != [0u8; 32]
+            && *a.committee_digest != [0u8; 32]
             && timings_in_bounds(
                 a.beacon_delay_slots,
                 a.exec_timeout_slots,
@@ -260,7 +260,7 @@ fn init_market(program_id: &Pubkey, accounts: &[AccountInfo], a: &InitMarket) ->
         Market::LEN,
     )?;
     let mut executors = [[0u8; 32]; MAX_EXECUTORS];
-    for (slot, k) in executors.iter_mut().zip(&a.executors) {
+    for (slot, k) in executors.iter_mut().zip(a.executors) {
         *slot = *k;
     }
     let m = Market {
@@ -268,16 +268,16 @@ fn init_market(program_id: &Pubkey, accounts: &[AccountInfo], a: &InitMarket) ->
         halted: false,
         market_id: a.market_id,
         creator: creator.key.to_bytes(),
-        admin: a.admin,
+        admin: *a.admin,
         pending_admin: [0; 32],
-        relay: a.relay,
+        relay: *a.relay,
         base_mint: base_mint.key.to_bytes(),
         quote_mint: quote_mint.key.to_bytes(),
         base_vault: base_vault.key.to_bytes(),
         quote_vault: quote_vault.key.to_bytes(),
-        params: a.params,
-        params_digest: merkle::hash(MARKET_PARAMS, &[&a.params]),
-        committee_digest: a.committee_digest,
+        params: *a.params,
+        params_digest: merkle::hash(MARKET_PARAMS, &[a.params]),
+        committee_digest: *a.committee_digest,
         executor_count: a.executors.len() as u8,
         receipt_quorum: a.receipt_quorum,
         executors,
@@ -293,7 +293,7 @@ fn init_market(program_id: &Pubkey, accounts: &[AccountInfo], a: &InitMarket) ->
         prev_receipt: [0; 32],
         state_root: EMPTY_STATE_ROOT,
         pending: Pending::NONE,
-        salt: a.salt,
+        salt: *a.salt,
         prev_committee_digest: [0; 32],
     };
     store_market(market, &m)
@@ -477,9 +477,9 @@ fn commit_batch(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
     epoch: u64,
-    root: [u8; 32],
+    root: &[u8; 32],
     count: u32,
-    terms_digest: [u8; 32],
+    terms_digest: &[u8; 32],
 ) -> ProgramResult {
     let it = &mut accounts.iter();
     let relay = next_account_info(it)?;
@@ -506,7 +506,7 @@ fn commit_batch(
         count >= 1 && count <= m.max_batch_envelopes(),
         TimescalesError::InvalidBatchCount,
     )?;
-    require(root != [0u8; 32], TimescalesError::InvalidInstruction)?;
+    require(*root != [0u8; 32], TimescalesError::InvalidInstruction)?;
 
     let epoch_le = epoch.to_le_bytes();
     let seeds: [&[u8]; 3] = [b"batch", market_acc.key.as_ref(), &epoch_le];
@@ -526,9 +526,9 @@ fn commit_batch(
         bump,
         market_acc.key.to_bytes(),
         epoch,
-        root,
+        *root,
         count,
-        terms_digest,
+        *terms_digest,
         slot,
     );
     b.store(&mut batch_acc.try_borrow_mut_data()?)?;
@@ -810,7 +810,7 @@ fn leaf_root(b: &Batch, leaf: &Leaf) -> Option<[u8; 32]> {
         merkle::leaf(&leaf.bytes()),
         u64::from(leaf.index),
         u64::from(b.settlement_count),
-        &leaf.path,
+        leaf.path,
     )
 }
 
@@ -832,7 +832,7 @@ fn verify_deltas(program_id: &Pubkey, accounts: &[AccountInfo], leaves: &[Leaf])
     for leaf in leaves {
         let trader_acc = next_account_info(it)?;
         let mut t = load_trader(program_id, market_acc.key, trader_acc)?;
-        require(t.owner == leaf.trader, TimescalesError::InvalidAccount)?;
+        require(t.owner == *leaf.trader, TimescalesError::InvalidAccount)?;
         require(leaf.index < b.settlement_count, TimescalesError::BadProof)?;
         require(
             !Batch::test_and_set(&mut b.verified, leaf.index),
@@ -911,7 +911,7 @@ fn apply_deltas(program_id: &Pubkey, accounts: &[AccountInfo], leaves: &[Leaf]) 
         let trader_acc = next_account_info(it)?;
         let mut t = load_trader(program_id, market_acc.key, trader_acc)?;
         require(
-            t.owner == leaf.trader && t.last_leaf_epoch == b.epoch,
+            t.owner == *leaf.trader && t.last_leaf_epoch == b.epoch,
             TimescalesError::InvalidAccount,
         )?;
         require(
