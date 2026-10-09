@@ -176,10 +176,6 @@ pub fn signed_message(commitment: &OrderCommitment) -> Vec<u8> {
     format!(
         "Timescales order\nCode: {}\nSign this only on the Timescales app.",
         signature_digest(commitment)
-            .as_bytes()
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect::<String>()
     )
     .into_bytes()
 }
