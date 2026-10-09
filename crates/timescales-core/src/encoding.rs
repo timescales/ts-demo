@@ -34,8 +34,14 @@ pub enum DecodeError {
 pub trait Encode {
     fn encode(&self, out: &mut Vec<u8>);
 
+    /// Encoded size when it is known up front, so `to_bytes` allocates once.
+    /// A hint only: the encoding never depends on it.
+    fn encoded_len(&self) -> usize {
+        0
+    }
+
     fn to_bytes(&self) -> Vec<u8> {
-        let mut out = Vec::new();
+        let mut out = Vec::with_capacity(self.encoded_len());
         self.encode(&mut out);
         out
     }

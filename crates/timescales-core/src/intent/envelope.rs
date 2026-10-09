@@ -172,6 +172,10 @@ impl SealedEnvelope {
 }
 
 impl Encode for SealedEnvelope {
+    fn encoded_len(&self) -> usize {
+        ENVELOPE_LEN
+    }
+
     fn encode(&self, out: &mut Vec<u8>) {
         put_u8(out, self.version);
         self.market.encode(out);

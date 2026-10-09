@@ -201,6 +201,10 @@ impl Decode for BookId {
 }
 
 impl Encode for Order {
+    fn encoded_len(&self) -> usize {
+        Self::ENCODED_LEN
+    }
+
     fn encode(&self, out: &mut Vec<u8>) {
         self.market.encode(out);
         self.trader.encode(out);
@@ -248,6 +252,10 @@ impl Fill {
 }
 
 impl Encode for Fill {
+    fn encoded_len(&self) -> usize {
+        Self::ENCODED_LEN
+    }
+
     fn encode(&self, out: &mut Vec<u8>) {
         self.commitment.encode(out);
         self.trader.encode(out);
@@ -280,6 +288,10 @@ impl ClearingPrice {
 }
 
 impl Encode for ClearingPrice {
+    fn encoded_len(&self) -> usize {
+        Self::ENCODED_LEN
+    }
+
     fn encode(&self, out: &mut Vec<u8>) {
         self.book.encode(out);
         self.tick.encode(out);

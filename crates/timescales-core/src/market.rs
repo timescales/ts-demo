@@ -312,6 +312,10 @@ impl Decode for CommitmentScheme {
 }
 
 impl Encode for MarketParams {
+    fn encoded_len(&self) -> usize {
+        Self::ENCODED_LEN
+    }
+
     fn encode(&self, out: &mut Vec<u8>) {
         self.market.encode(out);
         self.base_lot_size.encode(out);
@@ -356,6 +360,10 @@ impl Decode for MarketParams {
 }
 
 impl Encode for PriceBand {
+    fn encoded_len(&self) -> usize {
+        Self::ENCODED_LEN
+    }
+
     fn encode(&self, out: &mut Vec<u8>) {
         self.lo.encode(out);
         self.hi.encode(out);

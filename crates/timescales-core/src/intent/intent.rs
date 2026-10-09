@@ -53,6 +53,10 @@ impl IntentBody {
 }
 
 impl Encode for Cancel {
+    fn encoded_len(&self) -> usize {
+        Self::ENCODED_LEN
+    }
+
     fn encode(&self, out: &mut Vec<u8>) {
         self.market.encode(out);
         self.trader.encode(out);
