@@ -186,12 +186,24 @@ impl Shared {
 
     /// One shared value per row: `out[r] = sum_j coeffs[r][j] * self[cols[r][j]]`.
     /// Used for every public linear map (curves, selections, prefix sums).
+    /// Most coefficients are one or minus one, and those rows add instead of
+    /// multiplying. Values are always canonical, so the sums are identical.
     pub fn linear(&self, rows: &[Vec<(usize, Fp)>]) -> Shared {
         let g = |a: &Vec<Vec<Fp>>| -> Vec<Vec<Fp>> {
             a.iter()
                 .map(|x| {
                     rows.iter()
-                        .map(|r| r.iter().map(|(j, c)| x[*j] * *c).sum())
+                        .map(|r| {
+                            r.iter().fold(Fp::ZERO, |acc, (j, c)| {
+                                if *c == Fp::ONE {
+                                    acc + x[*j]
+                                } else if *c == -Fp::ONE {
+                                    acc - x[*j]
+                                } else {
+                                    acc + x[*j] * *c
+                                }
+                            })
+                        })
                         .collect()
                 })
                 .collect()
