@@ -1,19 +1,19 @@
 use core::ops::Deref;
 
 use solana_program::{
-    account_info::{next_account_info, AccountInfo},
+    account_info::{AccountInfo, next_account_info},
     clock::Clock,
     entrypoint::ProgramResult,
     program_error::ProgramError,
     pubkey::Pubkey,
-    sysvar::{instructions as ix_sysvar, slot_hashes, Sysvar},
+    sysvar::{Sysvar, instructions as ix_sysvar, slot_hashes},
 };
 
 use crate::beacon::{self, Lookup};
 use crate::constants::{
-    timelock_in_bounds, timings_in_bounds, BACKEND_TEE, BATCH_RETENTION, EMPTY_STATE_ROOT,
-    HEADER_LEN, HEADER_VERSION, MAX_BALANCE, MAX_DELTAS, MIN_TIMELOCK, RECEIPT_VERSION,
-    REVEAL_WINDOW,
+    BACKEND_TEE, BATCH_RETENTION, EMPTY_STATE_ROOT, HEADER_LEN, HEADER_VERSION, MAX_BALANCE,
+    MAX_DELTAS, MIN_TIMELOCK, RECEIPT_VERSION, REVEAL_WINDOW, timelock_in_bounds,
+    timings_in_bounds,
 };
 use crate::cpi::{check_mint, check_vault, close_account, init_pda, pda_bump, token_transfer};
 use crate::error::TimescalesError;
@@ -23,8 +23,8 @@ use crate::merkle::{
     self, BATCH_HEADER, EPOCH_TERMS, MARKET_ID, MARKET_PARAMS, OUTCOME, RECEIPT, RECEIPT_COSIGN,
 };
 use crate::state::{
-    exclusive, shared, AbortReason, Batch, Cursor, Exclusive, Market, Shared, Status, Trader,
-    BATCH_LEN, MARKET_LEN, PARAMS_LEN, TRADER_LEN,
+    AbortReason, BATCH_LEN, Batch, Cursor, Exclusive, MARKET_LEN, Market, PARAMS_LEN, Shared,
+    Status, TRADER_LEN, Trader, exclusive, shared,
 };
 
 const ED25519_PROGRAM: Pubkey =
@@ -73,11 +73,7 @@ pub fn process(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8]) -> Pr
 }
 
 pub fn require(cond: bool, e: TimescalesError) -> ProgramResult {
-    if cond {
-        Ok(())
-    } else {
-        Err(e.into())
-    }
+    if cond { Ok(()) } else { Err(e.into()) }
 }
 
 pub fn current_slot() -> Result<u64, ProgramError> {

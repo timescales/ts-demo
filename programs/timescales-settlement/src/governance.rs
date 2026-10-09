@@ -9,13 +9,13 @@
 use core::ops::DerefMut;
 
 use solana_program::{
-    account_info::{next_account_info, AccountInfo},
+    account_info::{AccountInfo, next_account_info},
     entrypoint::ProgramResult,
     program_error::ProgramError,
     pubkey::Pubkey,
 };
 
-use crate::constants::{timelock_in_bounds, timings_in_bounds, MAX_EXECUTORS, MIN_TIMELOCK};
+use crate::constants::{MAX_EXECUTORS, MIN_TIMELOCK, timelock_in_bounds, timings_in_bounds};
 use crate::cpi::token_transfer;
 use crate::error::TimescalesError;
 use crate::processor::{current_slot, load_market_mut, market_seeds, require};

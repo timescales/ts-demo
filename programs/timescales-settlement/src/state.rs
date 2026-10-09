@@ -384,11 +384,7 @@ view! {
 
 impl<D: Deref<Target = [u8]>> Trader<D> {
     pub fn balance(&self, quote: bool) -> u64 {
-        if quote {
-            self.quote()
-        } else {
-            self.base()
-        }
+        if quote { self.quote() } else { self.base() }
     }
 
     pub fn requested(&self, quote: bool) -> u64 {
