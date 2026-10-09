@@ -46,7 +46,7 @@ use solana_program::{account_info::AccountInfo, entrypoint::ProgramResult, pubke
 solana_program::declare_id!("FDQqHeaCY2iG9kbjkGGJngY2rgend8dW4JjfXmCQytQL");
 
 #[cfg(not(feature = "no-entrypoint"))]
-solana_program::entrypoint!(process_instruction);
+solana_program::entrypoint_no_alloc!(process_instruction);
 
 pub fn process_instruction(
     program_id: &Pubkey,
