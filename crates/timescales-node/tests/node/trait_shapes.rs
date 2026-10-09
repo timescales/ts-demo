@@ -278,6 +278,10 @@ impl NodeApi for FakeNode {
         self.events.subscribe()
     }
 
+    fn head_seq(&self) -> u64 {
+        0
+    }
+
     fn events_since(
         &self,
         seq: u64,

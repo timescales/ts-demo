@@ -227,12 +227,9 @@ impl Conn {
     }
 
     /// The newest `seq` of the log.
-    async fn probe_head(&mut self) -> Result<u64, ApiError> {
-        let head = match self.ctx.node.events_since(u64::MAX, Vec::new()).await? {
-            EventsSince::Events { head_seq, .. } | EventsSince::TooOld { head_seq } => head_seq,
-        };
-        self.head_seq = self.head_seq.max(head);
-        Ok(self.head_seq)
+    fn probe_head(&mut self) -> u64 {
+        self.head_seq = self.head_seq.max(self.ctx.node.head_seq());
+        self.head_seq
     }
 
     fn stream_id(&self) -> Hex {
@@ -331,10 +328,7 @@ impl Conn {
                 Err(e) => return self.internal(&e),
             }
         }
-        let head = match self.probe_head().await {
-            Ok(h) => h,
-            Err(e) => return self.internal(&e),
-        };
+        let head = self.probe_head();
         for (t, h) in &heads {
             self.topics.insert(
                 t.clone(),
@@ -382,10 +376,7 @@ impl Conn {
         if stream_id.is_some_and(|s| s != self.stream_id()) {
             return self.send(resync(ResyncReason::StreamChanged));
         }
-        let head = match self.probe_head().await {
-            Ok(h) => h,
-            Err(e) => return self.internal(&e),
-        };
+        let head = self.probe_head();
         if since > head {
             return self.send(resync(ResyncReason::UnknownSeq));
         }
@@ -567,9 +558,7 @@ async fn run(ctx: Ctx, socket: WebSocket, admitted: Admitted) {
         ctx: ctx.clone(),
     };
     // Heartbeats report the log's head from the start.
-    if let Err(e) = conn.probe_head().await {
-        tracing::warn!(code = %e.code, "stream head unknown at connect");
-    }
+    conn.probe_head();
     let period = Duration::from_millis(ctx.cfg.ws_heartbeat_ms.max(1));
     let mut heartbeat = tokio::time::interval_at(tokio::time::Instant::now() + period, period);
     let end = loop {

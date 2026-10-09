@@ -65,6 +65,8 @@ pub struct EventBus {
     /// order.
     order: Mutex<()>,
     head: AtomicU64,
+    /// The oldest `seq` in the log, read at boot and after every prune.
+    oldest: AtomicU64,
     stream_id: [u8; 16],
 }
 
@@ -93,12 +95,14 @@ impl EventBus {
         stream_id: [u8; 16],
     ) -> Result<Self, StoreError> {
         let head = last_seq(&repo).await?;
+        let oldest = first_seq(&repo, head).await?;
         let (tx, _) = broadcast::channel(BROADCAST_PER_MARKET * markets.max(1));
         Ok(Self {
             repo,
             tx,
             order: Mutex::new(()),
             head: AtomicU64::new(head),
+            oldest: AtomicU64::new(oldest),
             stream_id,
         })
     }
@@ -113,6 +117,14 @@ impl EventBus {
 
     pub fn subscribe(&self) -> broadcast::Receiver<Arc<LiveEvent>> {
         self.tx.subscribe()
+    }
+
+    /// Re-reads the oldest `seq` after a prune. It only moves up, so
+    /// prunes that overlap settle on the newest reading.
+    pub async fn pruned(&self) -> Result<(), StoreError> {
+        let first = first_seq(&self.repo, self.head_seq()).await?;
+        self.oldest.fetch_max(first, Ordering::AcqRel);
+        Ok(())
     }
 
     /// Appends `events` to the log in one transaction, then broadcasts
@@ -155,8 +167,7 @@ impl EventBus {
     /// than [`MAX_REPLAY`] events behind.
     pub async fn since(&self, seq: u64, topics: Vec<String>) -> Result<EventsSince, StoreError> {
         let head = self.head_seq();
-        let oldest = self.repo.events_since(0, Vec::new(), 1).await?;
-        let first = oldest.first().map_or(head.saturating_add(1), |e| e.seq);
+        let first = self.oldest.load(Ordering::Acquire);
         // Events after `seq` must all still be in the log.
         if seq.saturating_add(1) < first && seq < head {
             return Ok(EventsSince::TooOld { head_seq: head });
@@ -191,6 +202,13 @@ fn decode(s: &StoredEvent) -> Option<StreamEvent> {
         at_ms: s.at_ms,
         event,
     })
+}
+
+/// The oldest `seq` in the log. An empty log holds everything from the
+/// next event on, so `head + 1` stands in.
+async fn first_seq(repo: &NodeRepo, head: u64) -> Result<u64, StoreError> {
+    let oldest = repo.events_since(0, Vec::new(), 1).await?;
+    Ok(oldest.first().map_or(head.saturating_add(1), |e| e.seq))
 }
 
 /// The highest `seq` in the log. 0 for an empty log.

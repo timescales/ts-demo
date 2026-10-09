@@ -888,6 +888,7 @@ async fn prune(ctx: &JobCtx, last_terminal: u64) -> Step<JobOutput> {
         .repo
         .prune(ctx.market, ctx.now(), last_terminal, ctx.retention)
         .await?;
+    ctx.events.pruned().await?;
     ctx.keys.forget_before(last_terminal.saturating_add(1));
     tracing::debug!(
         rows = report.rows_deleted,

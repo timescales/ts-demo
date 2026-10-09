@@ -1073,6 +1073,10 @@ impl NodeApi for NodeHandle {
         self.inner.events.subscribe()
     }
 
+    fn head_seq(&self) -> u64 {
+        self.inner.events.head_seq()
+    }
+
     fn events_since(
         &self,
         seq: u64,
