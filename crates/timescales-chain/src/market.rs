@@ -22,6 +22,7 @@
 //! observation as `minContextSlot`, so a failover provider that is behind
 //! cannot answer.
 
+use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -101,6 +102,9 @@ pub struct SolanaMarketChain {
     market: Address,
     cfg: MarketChainConfig,
     seen: AtomicU64,
+    /// Trader PDAs derived so far. Settlement names the same traders on
+    /// every pass of its loop, and a derivation is a hash per bump tried.
+    trader_pdas: parking_lot::Mutex<HashMap<Address, Address>>,
 }
 
 impl fmt::Debug for SolanaMarketChain {
@@ -122,8 +126,14 @@ struct Observed {
 }
 
 /// `crate::program::verify_deltas` or `apply_deltas`.
-type DeltaBuilder =
-    fn(&Address, &Address, &Address, u64, &[crate::program::Leaf]) -> Result<Ix, ClientError>;
+type DeltaBuilder = fn(
+    &Address,
+    &Address,
+    &Address,
+    u64,
+    &[crate::program::Leaf],
+    &mut dyn FnMut(&Address) -> Result<Address, ClientError>,
+) -> Result<Ix, ClientError>;
 
 /// What one send means for the loop.
 enum Sent {
@@ -276,6 +286,7 @@ impl SolanaMarketChain {
             market,
             cfg,
             seen: AtomicU64::new(0),
+            trader_pdas: parking_lot::Mutex::new(HashMap::new()),
         }
     }
 
@@ -861,7 +872,7 @@ impl SolanaMarketChain {
                             &missing,
                             &payer_key,
                             epoch,
-                            crate::program::verify_deltas,
+                            crate::program::verify_deltas_with,
                         )?;
                         (SettleStage::Verifying, TxOp::Verify, ixs)
                     }
@@ -884,7 +895,7 @@ impl SolanaMarketChain {
                             &missing,
                             &payer_key,
                             epoch,
-                            crate::program::apply_deltas,
+                            crate::program::apply_deltas_with,
                         )?;
                         (SettleStage::Applying, TxOp::Apply, ixs)
                     }
@@ -932,12 +943,28 @@ impl SolanaMarketChain {
                     ))
             })
             .collect::<Result<_, _>>()?;
+        let mut pdas = self.trader_pdas.lock();
+        let mut trader = |owner: &Address| -> Result<Address, ClientError> {
+            if let Some(pda) = pdas.get(owner) {
+                return Ok(*pda);
+            }
+            let pda = crate::program::trader_pda(&self.program, &self.market, owner)?.0;
+            pdas.insert(*owner, pda);
+            Ok(pda)
+        };
         crate::program::plan_delta_chunks(&selected, payer, true)
             .into_iter()
             .map(|range| {
-                build(&self.program, payer, &self.market, epoch, &selected[range])
-                    .map(|ix| vec![ix])
-                    .map_err(ChainError::Decode)
+                build(
+                    &self.program,
+                    payer,
+                    &self.market,
+                    epoch,
+                    &selected[range],
+                    &mut trader,
+                )
+                .map(|ix| vec![ix])
+                .map_err(ChainError::Decode)
             })
             .collect()
     }

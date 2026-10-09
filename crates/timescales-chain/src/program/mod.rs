@@ -37,10 +37,10 @@ pub use errors::TimescalesProgramError;
 pub use governance::{GovernanceChange, PendingChange};
 pub use instructions::{
     AbortReason, InitMarketArgs, Leaf, Side, abort_batch, accept_admin, apply_change, apply_deltas,
-    cancel_change, cancel_withdraw_request, claim_fees, close_batch, close_trader, commit_batch,
-    cosign_receipt, deposit, ed25519_verify, finalize, init_market, leaves, open_trader,
-    post_receipt, propose_change, reclaim_batch, remove_executor, request_withdraw, reveal_beacon,
-    set_halted, verify_deltas, withdraw,
+    apply_deltas_with, cancel_change, cancel_withdraw_request, claim_fees, close_batch,
+    close_trader, commit_batch, cosign_receipt, deposit, ed25519_verify, finalize, init_market,
+    leaves, open_trader, post_receipt, propose_change, reclaim_batch, remove_executor,
+    request_withdraw, reveal_beacon, set_halted, verify_deltas, verify_deltas_with, withdraw,
 };
 pub use pda::{
     associated_token_address, batch_pda, derive_market_id, find_pda, market_pda, trader_pda,

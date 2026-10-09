@@ -433,6 +433,7 @@ fn delta_ix(
     market: &Key,
     epoch: u64,
     leaves: &[Leaf],
+    trader: &mut dyn FnMut(&Key) -> Result<Key, ClientError>,
 ) -> Result<Ix, ClientError> {
     let n = u8::try_from(leaves.len()).map_err(|_| ClientError::TooManyLeaves)?;
     let mut d = vec![tag, n];
@@ -443,10 +444,7 @@ fn delta_ix(
     ];
     for leaf in leaves {
         encode_leaf(&mut d, leaf)?;
-        accounts.push(Meta::w(
-            trader_pda(program, market, &leaf.delta.trader.0)?.0,
-            false,
-        ));
+        accounts.push(Meta::w(trader(&leaf.delta.trader.0)?, false));
     }
     Ok(ix(program, accounts, d))
 }
@@ -461,7 +459,30 @@ pub fn verify_deltas(
     epoch: u64,
     leaves: &[Leaf],
 ) -> Result<Ix, ClientError> {
-    delta_ix(tag::VERIFY_DELTAS, program, cranker, market, epoch, leaves)
+    verify_deltas_with(program, cranker, market, epoch, leaves, &mut |owner| {
+        Ok(trader_pda(program, market, owner)?.0)
+    })
+}
+
+/// [`verify_deltas`] with the Trader PDAs supplied by `trader`, for a caller
+/// that derives each one once and settles many chunks.
+pub fn verify_deltas_with(
+    program: &Key,
+    cranker: &Key,
+    market: &Key,
+    epoch: u64,
+    leaves: &[Leaf],
+    trader: &mut dyn FnMut(&Key) -> Result<Key, ClientError>,
+) -> Result<Ix, ClientError> {
+    delta_ix(
+        tag::VERIFY_DELTAS,
+        program,
+        cranker,
+        market,
+        epoch,
+        leaves,
+        trader,
+    )
 }
 
 /// Tag 9: same layout and accounts as [`verify_deltas`].
@@ -472,7 +493,29 @@ pub fn apply_deltas(
     epoch: u64,
     leaves: &[Leaf],
 ) -> Result<Ix, ClientError> {
-    delta_ix(tag::APPLY_DELTAS, program, cranker, market, epoch, leaves)
+    apply_deltas_with(program, cranker, market, epoch, leaves, &mut |owner| {
+        Ok(trader_pda(program, market, owner)?.0)
+    })
+}
+
+/// [`apply_deltas`] with the Trader PDAs supplied by `trader`.
+pub fn apply_deltas_with(
+    program: &Key,
+    cranker: &Key,
+    market: &Key,
+    epoch: u64,
+    leaves: &[Leaf],
+    trader: &mut dyn FnMut(&Key) -> Result<Key, ClientError>,
+) -> Result<Ix, ClientError> {
+    delta_ix(
+        tag::APPLY_DELTAS,
+        program,
+        cranker,
+        market,
+        epoch,
+        leaves,
+        trader,
+    )
 }
 
 /// Signer, market, batch (writable). These builders take the batch address
