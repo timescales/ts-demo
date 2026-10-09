@@ -62,8 +62,7 @@ impl BackendKind {
 }
 
 pub fn fills_root(fills: &[Fill]) -> Hash32 {
-    let leaves: Vec<Vec<u8>> = fills.iter().map(Encode::to_bytes).collect();
-    MerkleTree::from_data(&leaves).root()
+    MerkleTree::from_encoded(fills).root()
 }
 
 pub fn commitments_root(cs: &[OrderCommitment]) -> Hash32 {

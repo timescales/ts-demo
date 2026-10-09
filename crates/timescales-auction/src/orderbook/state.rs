@@ -74,8 +74,7 @@ impl OrderStateTable {
     }
 
     pub fn root(&self) -> Hash32 {
-        let leaves: Vec<Vec<u8>> = self.entries.values().map(Encode::to_bytes).collect();
-        MerkleTree::from_data(&leaves).root()
+        MerkleTree::from_encoded(self.entries.values()).root()
     }
 
     /// Apply one batch's public effects and prune entries older than

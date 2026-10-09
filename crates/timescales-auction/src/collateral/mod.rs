@@ -22,7 +22,7 @@
 use std::collections::BTreeMap;
 
 use timescales_core::crypto::{Hasher, domain};
-use timescales_core::merkle::MerkleTree;
+use timescales_core::merkle::{MerkleTree, leaf_hash};
 use timescales_core::{
     BaseAtoms, Decode, DecodeError, Encode, FeeBps, Hash32, MarketParams, PriceBand, QuoteAtoms,
     Reader, Side, TraderId,
@@ -83,16 +83,18 @@ impl BalanceSheet {
     /// Merkle root over `(trader, balance)` in trader order. Binds a receipt
     /// to the exact snapshot it was computed against.
     pub fn root(&self) -> Hash32 {
-        let leaves: Vec<Vec<u8>> = self
+        let mut buf = Vec::new();
+        let leaves = self
             .entries
             .iter()
             .map(|(t, b)| {
-                let mut v = t.to_bytes();
-                b.encode(&mut v);
-                v
+                buf.clear();
+                t.encode(&mut buf);
+                b.encode(&mut buf);
+                leaf_hash(&buf)
             })
             .collect();
-        MerkleTree::from_data(&leaves).root()
+        MerkleTree::from_leaf_hashes(leaves).root()
     }
 
     pub fn digest(&self) -> Hash32 {

@@ -89,8 +89,7 @@ pub struct SettlementBatch {
 
 impl SettlementBatch {
     pub fn tree(&self) -> MerkleTree {
-        let leaves: Vec<Vec<u8>> = self.deltas.iter().map(Encode::to_bytes).collect();
-        MerkleTree::from_data(&leaves)
+        MerkleTree::from_encoded(&self.deltas)
     }
 
     pub fn root(&self) -> Hash32 {

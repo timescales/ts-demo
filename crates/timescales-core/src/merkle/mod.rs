@@ -76,6 +76,20 @@ impl MerkleTree {
         Self::from_leaf_hashes(items.iter().map(|d| leaf_hash(d.as_ref())).collect())
     }
 
+    /// Leaves from canonical encodings, written through one scratch buffer.
+    pub fn from_encoded<'a, T: Encode + 'a>(items: impl IntoIterator<Item = &'a T>) -> Self {
+        let mut buf = Vec::new();
+        let leaves = items
+            .into_iter()
+            .map(|item| {
+                buf.clear();
+                item.encode(&mut buf);
+                leaf_hash(&buf)
+            })
+            .collect();
+        Self::from_leaf_hashes(leaves)
+    }
+
     pub fn root(&self) -> Hash32 {
         self.root
     }
