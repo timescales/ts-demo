@@ -654,7 +654,7 @@ impl MarketActor {
                     envelope_digest: digest,
                     wallet: Some(wallet),
                     session_pk: Some(session.session_key),
-                    submission: item.sub.raw.clone(),
+                    submission: item.sub.raw,
                     promise: promise.clone(),
                     received_at_ms: item.received_at_ms,
                 },

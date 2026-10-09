@@ -338,6 +338,9 @@ pub fn verify_raw(
     verify_submission(cfg, &sub).map_err(|e| relay_refusal(&e))
 }
 
+/// One submission's verification result.
+pub type Verdict = Result<timescales_service::relay::VerifiedSubmission, SubmitError>;
+
 /// The bounded verification pool: submission signatures are checked
 /// on the blocking pool, at most `permits` requests at a time, and a request
 /// that waits longer than two seconds for a slot is OVERLOADED.
@@ -355,27 +358,31 @@ impl Verifier {
         }
     }
 
-    /// Verifies every `raw` of one request, in order, on one blocking task.
+    /// Verifies every `raw` of one request, in order, on one blocking task,
+    /// and hands each back with its verdict. `Err` when the pool could not
+    /// take the request at all.
     pub async fn verify(
         &self,
         cfg: &RelayConfig,
         raws: Vec<Vec<u8>>,
-    ) -> Vec<Result<timescales_service::relay::VerifiedSubmission, SubmitError>> {
-        let n = raws.len();
+    ) -> Result<Vec<(Vec<u8>, Verdict)>, SubmitError> {
         let permit =
             match tokio::time::timeout(self.wait, self.permits.clone().acquire_owned()).await {
                 Ok(Ok(p)) => p,
-                _ => return vec![Err(overloaded()); n],
+                _ => return Err(overloaded()),
             };
         let cfg = cfg.clone();
-        let joined = tokio::task::spawn_blocking(move || {
+        tokio::task::spawn_blocking(move || {
             let _permit = permit;
-            raws.iter()
-                .map(|raw| verify_raw(&cfg, raw))
-                .collect::<Vec<_>>()
+            raws.into_iter()
+                .map(|raw| {
+                    let verdict = verify_raw(&cfg, &raw);
+                    (raw, verdict)
+                })
+                .collect()
         })
-        .await;
-        joined.unwrap_or_else(|_| vec![Err(plain(ErrorCode::Internal)); n])
+        .await
+        .map_err(|_| plain(ErrorCode::Internal))
     }
 }
 
@@ -429,13 +436,13 @@ impl Intake {
         let Some((_, cfg)) = self.markets.get(&m) else {
             return Err(plain(ErrorCode::MarketUnknown));
         };
-        let inner = self
-            .verifier
-            .verify(cfg, vec![raw.clone()])
-            .await
-            .pop()
-            .unwrap_or_else(|| Err(plain(ErrorCode::Internal)))?;
-        Ok(VerifiedSubmission { raw, inner })
+        let Some((raw, verdict)) = self.verifier.verify(cfg, vec![raw]).await?.pop() else {
+            return Err(plain(ErrorCode::Internal));
+        };
+        Ok(VerifiedSubmission {
+            raw,
+            inner: verdict?,
+        })
     }
 
     /// One request's submissions, in order, with one result each. Every
@@ -463,15 +470,18 @@ impl Intake {
         if row.market.is_some_and(|sm| sm != m) {
             return all(ErrorCode::WrongMarket);
         }
-        let raws = items.iter().map(|i| i.raw.clone()).collect();
-        let verified = self.verifier.verify(cfg, raws).await;
+        let (raws, claims): (Vec<_>, Vec<_>) = items.into_iter().map(|i| (i.raw, i.inner)).unzip();
+        let verified = match self.verifier.verify(cfg, raws).await {
+            Ok(v) => v,
+            Err(e) => return vec![Err(e); n],
+        };
         let now = self.clock.now_ms();
         let mut results: Vec<Option<Result<SubmitResult, SubmitError>>> = vec![None; n];
         let mut accepted = Vec::new();
         let mut positions = Vec::new();
-        for (i, (item, checked)) in items.into_iter().zip(verified).enumerate() {
-            let checked = match checked {
-                Ok(c) if c == item.inner => c,
+        for (i, ((raw, verdict), claimed)) in verified.into_iter().zip(claims).enumerate() {
+            let inner = match verdict {
+                Ok(v) if v == claimed => v,
                 Ok(_) => {
                     results[i] = Some(Err(plain(ErrorCode::BadRequest)));
                     continue;
@@ -481,10 +491,7 @@ impl Intake {
                     continue;
                 }
             };
-            let item = VerifiedSubmission {
-                raw: item.raw,
-                inner: checked,
-            };
+            let item = VerifiedSubmission { raw, inner };
             let sub = &item.inner.submission;
             let env = &sub.envelope;
             let refusal = if sub.trader.0 != session.session_key {
@@ -687,17 +694,17 @@ mod tests {
             carry_p: 0.0,
         };
         let started = tokio::time::Instant::now();
-        let r = v.verify(&cfg, vec![vec![0; 3], vec![0; 3]]).await;
+        let e = v
+            .verify(&cfg, vec![vec![0; 3], vec![0; 3]])
+            .await
+            .unwrap_err();
         assert!(started.elapsed() >= VERIFY_WAIT);
-        assert_eq!(r.len(), 2);
-        for e in r {
-            let e = e.unwrap_err();
-            assert_eq!(e.code, ErrorCode::Overloaded);
-            assert_eq!(e.retry_after_ms, Some(1_000));
-        }
+        assert_eq!(e.code, ErrorCode::Overloaded);
+        assert_eq!(e.retry_after_ms, Some(1_000));
         drop(held);
-        let r = v.verify(&cfg, vec![vec![0; 3]]).await;
-        assert_eq!(r[0].clone().unwrap_err().code, ErrorCode::DecodeFailed);
+        let r = v.verify(&cfg, vec![vec![0; 3]]).await.unwrap();
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].1.clone().unwrap_err().code, ErrorCode::DecodeFailed);
     }
 
     #[test]
