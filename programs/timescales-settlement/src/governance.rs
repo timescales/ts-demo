@@ -6,6 +6,8 @@
 //! with `ChangeDue`, so a relay cannot starve it by closing and committing
 //! in one transaction.
 
+use core::ops::DerefMut;
+
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
     entrypoint::ProgramResult,
@@ -16,8 +18,8 @@ use solana_program::{
 use crate::constants::{timelock_in_bounds, timings_in_bounds, MAX_EXECUTORS, MIN_TIMELOCK};
 use crate::cpi::token_transfer;
 use crate::error::TimescalesError;
-use crate::processor::{current_slot, load_market, market_seeds, require, store_market};
-use crate::state::{Cursor, Market, Pending, MAX_PAYLOAD};
+use crate::processor::{current_slot, load_market_mut, market_seeds, require};
+use crate::state::{Cursor, Exclusive, Market};
 
 pub const SET_RELAY: u8 = 1;
 pub const SET_EXECUTORS: u8 = 2;
@@ -74,10 +76,7 @@ fn decode(kind: u8, payload: &[u8]) -> Result<Change, ProgramError> {
         SET_EXECUTORS => {
             let n = usize::from(c.u8()?);
             require(n <= MAX_EXECUTORS, TimescalesError::InvalidConfig)?;
-            let mut keys = Vec::with_capacity(n);
-            for _ in 0..n {
-                keys.push(c.key()?);
-            }
+            let keys = c.chunks(n)?.to_vec();
             let quorum = c.u8()?;
             require(
                 executors_valid(&keys, quorum),
@@ -121,55 +120,52 @@ pub fn parse(kind: u8, payload: &[u8]) -> Result<Change, ProgramError> {
     decode(kind, payload).map_err(|_| TimescalesError::InvalidConfig.into())
 }
 
-fn apply(m: &mut Market, change: Change) {
+fn apply<D: DerefMut<Target = [u8]>>(m: &mut Market<D>, change: Change) {
     match change {
-        Change::SetRelay(k) => m.relay = k,
+        Change::SetRelay(k) => m.set_relay(&k),
         Change::SetExecutors { keys, quorum } => {
-            m.executors = [[0u8; 32]; MAX_EXECUTORS];
-            for (slot, k) in m.executors.iter_mut().zip(&keys) {
-                *slot = *k;
-            }
-            m.executor_count = keys.len() as u8;
-            m.receipt_quorum = quorum;
+            m.set_executors(&keys);
+            m.set_receipt_quorum(quorum);
         }
         Change::SetCommitteeDigest(d) => {
-            m.prev_committee_digest = m.committee_digest;
-            m.committee_digest = d;
+            let prev = *m.committee_digest();
+            m.set_prev_committee_digest(&prev);
+            m.set_committee_digest(&d);
         }
-        Change::SetAdmin(k) => m.pending_admin = k,
+        Change::SetAdmin(k) => m.set_pending_admin(&k),
         Change::SetTimings {
             beacon_delay_slots,
             exec_timeout_slots,
             settle_timeout_slots,
         } => {
-            m.beacon_delay_slots = beacon_delay_slots;
-            m.exec_timeout_slots = exec_timeout_slots;
-            m.settle_timeout_slots = settle_timeout_slots;
+            m.set_beacon_delay_slots(beacon_delay_slots);
+            m.set_exec_timeout_slots(exec_timeout_slots);
+            m.set_settle_timeout_slots(settle_timeout_slots);
         }
-        Change::SetTimelock(slots) => m.timelock_slots = slots,
+        Change::SetTimelock(slots) => m.set_timelock_slots(slots),
     }
 }
 
-/// `[admin (s), market (w)]` with the admin check. Returns the market.
-fn admin_market<'a, 'b>(
+/// `[admin (s), market (w)]` with the admin check.
+fn admin_market<'a>(
     program_id: &Pubkey,
-    accounts: &'a [AccountInfo<'b>],
-) -> Result<(&'a AccountInfo<'b>, Market), ProgramError> {
+    accounts: &'a [AccountInfo<'_>],
+) -> Result<Market<Exclusive<'a>>, ProgramError> {
     let it = &mut accounts.iter();
     let admin = next_account_info(it)?;
     let market_acc = next_account_info(it)?;
-    let m = load_market(program_id, market_acc)?;
+    let m = load_market_mut(program_id, market_acc)?;
     require(
-        admin.is_signer && admin.key.to_bytes() == m.admin,
+        admin.is_signer && admin.key.as_array() == m.admin(),
         TimescalesError::Unauthorised,
     )?;
-    Ok((market_acc, m))
+    Ok(m)
 }
 
 pub fn set_halted(program_id: &Pubkey, accounts: &[AccountInfo], halted: bool) -> ProgramResult {
-    let (market_acc, mut m) = admin_market(program_id, accounts)?;
-    m.halted = halted;
-    store_market(market_acc, &m)
+    let mut m = admin_market(program_id, accounts)?;
+    m.set_halted(halted);
+    Ok(())
 }
 
 pub fn propose_change(
@@ -178,20 +174,14 @@ pub fn propose_change(
     kind: u8,
     payload: &[u8],
 ) -> ProgramResult {
-    let (market_acc, mut m) = admin_market(program_id, accounts)?;
-    require(m.pending.kind == 0, TimescalesError::ChangePending)?;
+    let mut m = admin_market(program_id, accounts)?;
+    require(m.pending_kind() == 0, TimescalesError::ChangePending)?;
     parse(kind, payload)?;
-    let mut buf = [0u8; MAX_PAYLOAD];
-    buf[..payload.len()].copy_from_slice(payload);
-    m.pending = Pending {
-        kind,
-        eta_slot: current_slot()?
-            .checked_add(m.timelock_slots)
-            .ok_or(TimescalesError::Overflow)?,
-        len: payload.len() as u16,
-        payload: buf,
-    };
-    store_market(market_acc, &m)
+    let eta_slot = current_slot()?
+        .checked_add(m.timelock_slots())
+        .ok_or(TimescalesError::Overflow)?;
+    m.set_pending(kind, eta_slot, payload);
+    Ok(())
 }
 
 /// Permissionless once the timelock has passed.
@@ -200,43 +190,44 @@ pub fn apply_change(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramRes
     let cranker = next_account_info(it)?;
     let market_acc = next_account_info(it)?;
     require(cranker.is_signer, TimescalesError::Unauthorised)?;
-    let mut m = load_market(program_id, market_acc)?;
-    require(m.pending.kind != 0, TimescalesError::NoPendingChange)?;
+    let mut m = load_market_mut(program_id, market_acc)?;
+    require(m.pending_kind() != 0, TimescalesError::NoPendingChange)?;
     require(
-        current_slot()? >= m.pending.eta_slot,
+        current_slot()? >= m.pending_eta_slot(),
         TimescalesError::Timelocked,
     )?;
     require(
-        !between_batches(m.pending.kind) || !m.in_flight(),
+        !between_batches(m.pending_kind()) || !m.in_flight(),
         TimescalesError::InFlight,
     )?;
-    let change = parse(m.pending.kind, m.pending.payload())?;
+    let change = parse(m.pending_kind(), m.pending_payload())?;
     apply(&mut m, change);
-    m.pending = Pending::NONE;
-    store_market(market_acc, &m)
+    m.clear_pending();
+    Ok(())
 }
 
 pub fn cancel_change(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
-    let (market_acc, mut m) = admin_market(program_id, accounts)?;
-    require(m.pending.kind != 0, TimescalesError::NoPendingChange)?;
-    m.pending = Pending::NONE;
-    store_market(market_acc, &m)
+    let mut m = admin_market(program_id, accounts)?;
+    require(m.pending_kind() != 0, TimescalesError::NoPendingChange)?;
+    m.clear_pending();
+    Ok(())
 }
 
 pub fn accept_admin(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
     let it = &mut accounts.iter();
     let signer = next_account_info(it)?;
     let market_acc = next_account_info(it)?;
-    let mut m = load_market(program_id, market_acc)?;
+    let mut m = load_market_mut(program_id, market_acc)?;
     require(
         signer.is_signer
-            && m.pending_admin != [0u8; 32]
-            && signer.key.to_bytes() == m.pending_admin,
+            && *m.pending_admin() != [0u8; 32]
+            && signer.key.as_array() == m.pending_admin(),
         TimescalesError::NotPendingAdmin,
     )?;
-    m.admin = m.pending_admin;
-    m.pending_admin = [0u8; 32];
-    store_market(market_acc, &m)
+    let admin = *m.pending_admin();
+    m.set_admin(&admin);
+    m.set_pending_admin(&[0u8; 32]);
+    Ok(())
 }
 
 /// Immediate. The quorum is left alone: if it now exceeds the live
@@ -247,13 +238,13 @@ pub fn remove_executor(
     accounts: &[AccountInfo],
     key: &[u8; 32],
 ) -> ProgramResult {
-    let (market_acc, mut m) = admin_market(program_id, accounts)?;
+    let mut m = admin_market(program_id, accounts)?;
     let slot = m
         .executor_slot(key)
         .ok_or(TimescalesError::UnknownExecutor)?;
-    m.executors[slot] = [0u8; 32];
-    m.executor_count = m.executor_count.saturating_sub(1);
-    store_market(market_acc, &m)
+    m.clear_executor(slot);
+    m.set_executor_count(m.executor_count().saturating_sub(1));
+    Ok(())
 }
 
 pub fn claim_fees(program_id: &Pubkey, accounts: &[AccountInfo], amount: u64) -> ProgramResult {
@@ -263,22 +254,23 @@ pub fn claim_fees(program_id: &Pubkey, accounts: &[AccountInfo], amount: u64) ->
     let vault = next_account_info(it)?;
     let dest = next_account_info(it)?;
     let token = next_account_info(it)?;
-    let mut m = load_market(program_id, market_acc)?;
+    let mut m = load_market_mut(program_id, market_acc)?;
     require(
-        admin.is_signer && admin.key.to_bytes() == m.admin,
+        admin.is_signer && admin.key.as_array() == m.admin(),
         TimescalesError::Unauthorised,
     )?;
-    let unclaimed = m.fees_accrued.saturating_sub(m.fees_claimed);
+    let unclaimed = m.fees_accrued().saturating_sub(m.fees_claimed());
     require(amount <= unclaimed, TimescalesError::Insolvent)?;
     require(
-        vault.key.to_bytes() == m.quote_vault,
+        vault.key.as_array() == m.quote_vault(),
         TimescalesError::InvalidAccount,
     )?;
-    m.fees_claimed += amount;
-    store_market(market_acc, &m)?;
+    m.set_fees_claimed(m.fees_claimed() + amount);
+    let (id, bump) = (m.market_id().to_le_bytes(), m.bump());
+    // The market signs the transfer, so its view goes first.
+    drop(m);
     if amount > 0 {
-        let id = m.market_id.to_le_bytes();
-        let seeds = market_seeds(&id, &m.bump);
+        let seeds = market_seeds(&id, &bump);
         token_transfer(token, vault, dest, market_acc, amount, Some(&seeds))?;
     }
     Ok(())

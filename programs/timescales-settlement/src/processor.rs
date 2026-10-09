@@ -1,3 +1,5 @@
+use core::ops::Deref;
+
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
     clock::Clock,
@@ -10,8 +12,8 @@ use solana_program::{
 use crate::beacon::{self, Lookup};
 use crate::constants::{
     timelock_in_bounds, timings_in_bounds, BACKEND_TEE, BATCH_RETENTION, EMPTY_STATE_ROOT,
-    HEADER_LEN, HEADER_VERSION, MAX_BALANCE, MAX_DELTAS, MAX_EXECUTORS, MIN_TIMELOCK,
-    RECEIPT_VERSION, REVEAL_WINDOW,
+    HEADER_LEN, HEADER_VERSION, MAX_BALANCE, MAX_DELTAS, MIN_TIMELOCK, RECEIPT_VERSION,
+    REVEAL_WINDOW,
 };
 use crate::cpi::{check_mint, check_vault, close_account, init_pda, pda_bump, token_transfer};
 use crate::error::TimescalesError;
@@ -20,7 +22,10 @@ use crate::instruction::{InitMarket, Instruction, Leaf};
 use crate::merkle::{
     self, BATCH_HEADER, EPOCH_TERMS, MARKET_ID, MARKET_PARAMS, OUTCOME, RECEIPT, RECEIPT_COSIGN,
 };
-use crate::state::{AbortReason, Batch, Cursor, Market, Pending, Status, Trader, PARAMS_LEN};
+use crate::state::{
+    exclusive, shared, AbortReason, Batch, Cursor, Exclusive, Market, Shared, Status, Trader,
+    BATCH_LEN, MARKET_LEN, PARAMS_LEN, TRADER_LEN,
+};
 
 const ED25519_PROGRAM: Pubkey =
     solana_program::pubkey!("Ed25519SigVerify111111111111111111111111111");
@@ -92,33 +97,50 @@ pub fn market_seeds<'a>(id: &'a [u8; 8], bump: &'a u8) -> [&'a [u8]; 3] {
     [b"market", id, core::slice::from_ref(bump)]
 }
 
-pub fn load_market(program_id: &Pubkey, acc: &AccountInfo) -> Result<Market, ProgramError> {
+/// The market account: owned by this program, laid out as a market and
+/// at its canonical address.
+fn checked_market<D: Deref<Target = [u8]>>(
+    program_id: &Pubkey,
+    acc: &AccountInfo,
+    d: D,
+) -> Result<Market<D>, ProgramError> {
     require(acc.owner == program_id, TimescalesError::InvalidAccount)?;
-    let m = Market::load(&acc.try_borrow_data()?)?;
-    let id = m.market_id.to_le_bytes();
-    let expected = Pubkey::create_program_address(&market_seeds(&id, &m.bump), program_id)
+    let m = Market::view(d)?;
+    let id = m.market_id().to_le_bytes();
+    let expected = Pubkey::create_program_address(&market_seeds(&id, &m.bump()), program_id)
         .map_err(|_| TimescalesError::InvalidAccount)?;
     require(*acc.key == expected, TimescalesError::InvalidAccount)?;
     Ok(m)
 }
 
-pub fn store_market(acc: &AccountInfo, m: &Market) -> ProgramResult {
-    m.store(&mut acc.try_borrow_mut_data()?)
+pub fn load_market<'r>(
+    program_id: &Pubkey,
+    acc: &'r AccountInfo<'_>,
+) -> Result<Market<Shared<'r>>, ProgramError> {
+    checked_market(program_id, acc, shared(acc)?)
 }
 
-fn load_trader(
+pub fn load_market_mut<'r>(
+    program_id: &Pubkey,
+    acc: &'r AccountInfo<'_>,
+) -> Result<Market<Exclusive<'r>>, ProgramError> {
+    checked_market(program_id, acc, exclusive(acc)?)
+}
+
+fn checked_trader<D: Deref<Target = [u8]>>(
     program_id: &Pubkey,
     market: &Pubkey,
     acc: &AccountInfo,
-) -> Result<Trader, ProgramError> {
+    d: D,
+) -> Result<Trader<D>, ProgramError> {
     require(acc.owner == program_id, TimescalesError::InvalidAccount)?;
-    let t = Trader::load(&acc.try_borrow_data()?)?;
+    let t = Trader::view(d)?;
     require(
-        t.market == market.to_bytes(),
+        t.market() == market.as_array(),
         TimescalesError::InvalidAccount,
     )?;
     let expected = Pubkey::create_program_address(
-        &[b"trader", market.as_ref(), &t.owner, &[t.bump]],
+        &[b"trader", market.as_ref(), t.owner(), &[t.bump()]],
         program_id,
     )
     .map_err(|_| TimescalesError::InvalidAccount)?;
@@ -126,39 +148,81 @@ fn load_trader(
     Ok(t)
 }
 
-/// The trader account, owned by the signing `owner`.
-fn owned_trader(
+fn load_trader<'r>(
+    program_id: &Pubkey,
+    market: &Pubkey,
+    acc: &'r AccountInfo<'_>,
+) -> Result<Trader<Shared<'r>>, ProgramError> {
+    checked_trader(program_id, market, acc, shared(acc)?)
+}
+
+fn load_trader_mut<'r>(
+    program_id: &Pubkey,
+    market: &Pubkey,
+    acc: &'r AccountInfo<'_>,
+) -> Result<Trader<Exclusive<'r>>, ProgramError> {
+    checked_trader(program_id, market, acc, exclusive(acc)?)
+}
+
+/// The trader account is owned by the signing `owner`.
+fn owned_by<D: Deref<Target = [u8]>>(t: &Trader<D>, owner: &AccountInfo) -> ProgramResult {
+    require(
+        owner.is_signer && t.owner() == owner.key.as_array(),
+        TimescalesError::Unauthorised,
+    )
+}
+
+fn owned_trader_mut<'r>(
     program_id: &Pubkey,
     market: &Pubkey,
     owner: &AccountInfo,
-    acc: &AccountInfo,
-) -> Result<Trader, ProgramError> {
-    let t = load_trader(program_id, market, acc)?;
-    require(
-        owner.is_signer && t.owner == owner.key.to_bytes(),
-        TimescalesError::Unauthorised,
-    )?;
+    acc: &'r AccountInfo<'_>,
+) -> Result<Trader<Exclusive<'r>>, ProgramError> {
+    let t = load_trader_mut(program_id, market, acc)?;
+    owned_by(&t, owner)?;
     Ok(t)
 }
 
-fn load_batch(
+fn checked_batch<D: Deref<Target = [u8]>>(
     program_id: &Pubkey,
     market: &Pubkey,
     acc: &AccountInfo,
-) -> Result<Batch, ProgramError> {
+    d: D,
+) -> Result<Batch<D>, ProgramError> {
     require(acc.owner == program_id, TimescalesError::InvalidAccount)?;
-    let b = Batch::load(&acc.try_borrow_data()?)?;
+    let b = Batch::checked(d)?;
     require(
-        b.market == market.to_bytes(),
+        b.market() == market.as_array(),
         TimescalesError::InvalidAccount,
     )?;
     let expected = Pubkey::create_program_address(
-        &[b"batch", market.as_ref(), &b.epoch.to_le_bytes(), &[b.bump]],
+        &[
+            b"batch",
+            market.as_ref(),
+            &b.epoch().to_le_bytes(),
+            &[b.bump()],
+        ],
         program_id,
     )
     .map_err(|_| TimescalesError::InvalidAccount)?;
     require(*acc.key == expected, TimescalesError::InvalidAccount)?;
     Ok(b)
+}
+
+fn load_batch<'r>(
+    program_id: &Pubkey,
+    market: &Pubkey,
+    acc: &'r AccountInfo<'_>,
+) -> Result<Batch<Shared<'r>>, ProgramError> {
+    checked_batch(program_id, market, acc, shared(acc)?)
+}
+
+fn load_batch_mut<'r>(
+    program_id: &Pubkey,
+    market: &Pubkey,
+    acc: &'r AccountInfo<'_>,
+) -> Result<Batch<Exclusive<'r>>, ProgramError> {
+    checked_batch(program_id, market, acc, exclusive(acc)?)
 }
 
 /// `MarketParams` checks that the program can enforce: the
@@ -257,46 +321,31 @@ fn init_market(program_id: &Pubkey, accounts: &[AccountInfo], a: &InitMarket) ->
         system,
         &[b"market", &id],
         bump,
-        Market::LEN,
+        MARKET_LEN,
     )?;
-    let mut executors = [[0u8; 32]; MAX_EXECUTORS];
-    for (slot, k) in executors.iter_mut().zip(a.executors) {
-        *slot = *k;
-    }
-    let m = Market {
-        bump,
-        halted: false,
-        market_id: a.market_id,
-        creator: creator.key.to_bytes(),
-        admin: *a.admin,
-        pending_admin: [0; 32],
-        relay: *a.relay,
-        base_mint: base_mint.key.to_bytes(),
-        quote_mint: quote_mint.key.to_bytes(),
-        base_vault: base_vault.key.to_bytes(),
-        quote_vault: quote_vault.key.to_bytes(),
-        params: *a.params,
-        params_digest: merkle::hash(MARKET_PARAMS, &[a.params]),
-        committee_digest: *a.committee_digest,
-        executor_count: a.executors.len() as u8,
-        receipt_quorum: a.receipt_quorum,
-        executors,
-        beacon_delay_slots: a.beacon_delay_slots,
-        timelock_slots: a.timelock_slots,
-        exec_timeout_slots: a.exec_timeout_slots,
-        settle_timeout_slots: a.settle_timeout_slots,
-        last_committed: 0,
-        last_settled: 0,
-        last_progress_slot: current_slot()?,
-        fees_accrued: 0,
-        fees_claimed: 0,
-        prev_receipt: [0; 32],
-        state_root: EMPTY_STATE_ROOT,
-        pending: Pending::NONE,
-        salt: *a.salt,
-        prev_committee_digest: [0; 32],
-    };
-    store_market(market, &m)
+    let slot = current_slot()?;
+    let mut m = Market::init(exclusive(market)?, bump)?;
+    m.set_market_id(a.market_id);
+    m.set_creator(creator.key.as_array());
+    m.set_admin(a.admin);
+    m.set_relay(a.relay);
+    m.set_base_mint(base_mint.key.as_array());
+    m.set_quote_mint(quote_mint.key.as_array());
+    m.set_base_vault(base_vault.key.as_array());
+    m.set_quote_vault(quote_vault.key.as_array());
+    m.set_params(a.params);
+    m.set_params_digest(&merkle::hash(MARKET_PARAMS, &[a.params]));
+    m.set_committee_digest(a.committee_digest);
+    m.set_executors(a.executors);
+    m.set_receipt_quorum(a.receipt_quorum);
+    m.set_beacon_delay_slots(a.beacon_delay_slots);
+    m.set_timelock_slots(a.timelock_slots);
+    m.set_exec_timeout_slots(a.exec_timeout_slots);
+    m.set_settle_timeout_slots(a.settle_timeout_slots);
+    m.set_last_progress_slot(slot);
+    m.set_state_root(&EMPTY_STATE_ROOT);
+    m.set_salt(a.salt);
+    Ok(())
 }
 
 fn open_trader(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
@@ -309,24 +358,17 @@ fn open_trader(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
     load_market(program_id, market)?;
     let seeds: [&[u8]; 3] = [b"trader", market.key.as_ref(), owner.key.as_ref()];
     let bump = pda_bump(program_id, trader, &seeds)?;
-    init_pda(program_id, owner, trader, system, &seeds, bump, Trader::LEN)?;
-    let t = Trader::new(
-        bump,
-        market.key.to_bytes(),
-        owner.key.to_bytes(),
-        current_slot()?,
-    );
-    t.store(&mut trader.try_borrow_mut_data()?)
+    init_pda(program_id, owner, trader, system, &seeds, bump, TRADER_LEN)?;
+    let slot = current_slot()?;
+    let mut t = Trader::init(exclusive(trader)?, bump)?;
+    t.set_market(market.key.as_array());
+    t.set_owner(owner.key.as_array());
+    t.set_last_change_slot(slot);
+    Ok(())
 }
 
-fn vault_for(m: &Market, quote: bool) -> [u8; 32] {
-    if quote {
-        m.quote_vault
-    } else {
-        m.base_vault
-    }
-}
-
+/// Balances are written before the transfer: it lands or the whole
+/// transaction fails.
 fn deposit(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
@@ -341,14 +383,14 @@ fn deposit(
     let vault = next_account_info(it)?;
     let token = next_account_info(it)?;
     let m = load_market(program_id, market_acc)?;
-    require(!m.halted, TimescalesError::Halted)?;
+    require(!m.halted(), TimescalesError::Halted)?;
     require(amount > 0, TimescalesError::InvalidInstruction)?;
-    let mut t = owned_trader(program_id, market_acc.key, owner, trader_acc)?;
+    let mut t = owned_trader_mut(program_id, market_acc.key, owner, trader_acc)?;
     require(
-        vault.key.to_bytes() == vault_for(&m, quote),
+        vault.key.as_array() == m.vault(quote),
         TimescalesError::InvalidAccount,
     )?;
-    let balance = if quote { t.quote } else { t.base };
+    let balance = t.balance(quote);
     require(
         balance
             .checked_add(amount)
@@ -356,11 +398,11 @@ fn deposit(
         TimescalesError::BalanceCap,
     )?;
     t.capture_floor(&m);
-    token_transfer(token, source, vault, owner, amount, None)?;
-    let side = if quote { &mut t.quote } else { &mut t.base };
-    *side = side.checked_add(amount).ok_or(TimescalesError::Overflow)?;
-    t.last_change_slot = current_slot()?;
-    t.store(&mut trader_acc.try_borrow_mut_data()?)
+    t.set_balance(quote, balance + amount);
+    t.set_last_change_slot(current_slot()?);
+    drop(t);
+    drop(m);
+    token_transfer(token, source, vault, owner, amount, None)
 }
 
 /// Reserves, does not debit: the request is paid out by `Withdraw`
@@ -376,22 +418,22 @@ fn request_withdraw(
     let market_acc = next_account_info(it)?;
     let trader_acc = next_account_info(it)?;
     let m = load_market(program_id, market_acc)?;
-    let mut t = owned_trader(program_id, market_acc.key, owner, trader_acc)?;
+    let mut t = owned_trader_mut(program_id, market_acc.key, owner, trader_acc)?;
     require(
-        t.requested_base == 0 && t.requested_quote == 0,
+        t.requested_base() == 0 && t.requested_quote() == 0,
         TimescalesError::WithdrawPending,
     )?;
     require(base != 0 || quote != 0, TimescalesError::NothingToWithdraw)?;
     require(
-        base <= t.base && quote <= t.quote,
+        base <= t.base() && quote <= t.quote(),
         TimescalesError::Insolvent,
     )?;
     t.capture_floor(&m);
-    t.requested_base = base;
-    t.requested_quote = quote;
-    t.request_epoch = m.last_committed;
-    t.last_change_slot = current_slot()?;
-    t.store(&mut trader_acc.try_borrow_mut_data()?)
+    t.set_requested_base(base);
+    t.set_requested_quote(quote);
+    t.set_request_epoch(m.last_committed());
+    t.set_last_change_slot(current_slot()?);
+    Ok(())
 }
 
 fn cancel_withdraw_request(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
@@ -400,12 +442,12 @@ fn cancel_withdraw_request(program_id: &Pubkey, accounts: &[AccountInfo]) -> Pro
     let market_acc = next_account_info(it)?;
     let trader_acc = next_account_info(it)?;
     let m = load_market(program_id, market_acc)?;
-    let mut t = owned_trader(program_id, market_acc.key, owner, trader_acc)?;
+    let mut t = owned_trader_mut(program_id, market_acc.key, owner, trader_acc)?;
     t.capture_floor(&m);
-    t.requested_base = 0;
-    t.requested_quote = 0;
-    t.last_change_slot = current_slot()?;
-    t.store(&mut trader_acc.try_borrow_mut_data()?)
+    t.set_requested_base(0);
+    t.set_requested_quote(0);
+    t.set_last_change_slot(current_slot()?);
+    Ok(())
 }
 
 /// Pays `min(requested, balance)` for one side once the batch in flight at
@@ -420,35 +462,28 @@ fn withdraw(program_id: &Pubkey, accounts: &[AccountInfo], quote: bool) -> Progr
     let dest = next_account_info(it)?;
     let token = next_account_info(it)?;
     let m = load_market(program_id, market_acc)?;
-    let mut t = owned_trader(program_id, market_acc.key, owner, trader_acc)?;
-    let requested = if quote {
-        t.requested_quote
-    } else {
-        t.requested_base
-    };
+    let mut t = owned_trader_mut(program_id, market_acc.key, owner, trader_acc)?;
+    let requested = t.requested(quote);
     require(requested > 0, TimescalesError::NothingToWithdraw)?;
     require(
-        m.last_settled >= t.request_epoch,
+        m.last_settled() >= t.request_epoch(),
         TimescalesError::WithdrawLocked,
     )?;
     require(
-        vault.key.to_bytes() == vault_for(&m, quote),
+        vault.key.as_array() == m.vault(quote),
         TimescalesError::InvalidAccount,
     )?;
     t.capture_floor(&m);
-    let (balance, req) = if quote {
-        (&mut t.quote, &mut t.requested_quote)
-    } else {
-        (&mut t.base, &mut t.requested_base)
-    };
-    let amount = requested.min(*balance);
-    *balance -= amount;
-    *req = 0;
-    t.last_change_slot = current_slot()?;
-    t.store(&mut trader_acc.try_borrow_mut_data()?)?;
+    let balance = t.balance(quote);
+    let amount = requested.min(balance);
+    t.set_balance(quote, balance - amount);
+    t.set_requested(quote, 0);
+    t.set_last_change_slot(current_slot()?);
+    let (id, bump) = (m.market_id().to_le_bytes(), m.bump());
+    drop(t);
+    drop(m);
     if amount > 0 {
-        let id = m.market_id.to_le_bytes();
-        let seeds = market_seeds(&id, &m.bump);
+        let seeds = market_seeds(&id, &bump);
         token_transfer(token, vault, dest, market_acc, amount, Some(&seeds))?;
     }
     Ok(())
@@ -464,12 +499,14 @@ fn close_trader(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult 
     let market_acc = next_account_info(it)?;
     let trader_acc = next_account_info(it)?;
     let m = load_market(program_id, market_acc)?;
-    let t = owned_trader(program_id, market_acc.key, owner, trader_acc)?;
+    let t = load_trader(program_id, market_acc.key, trader_acc)?;
+    owned_by(&t, owner)?;
     require(t.is_empty(), TimescalesError::AccountNotEmpty)?;
     require(
-        !m.in_flight() || t.last_leaf_epoch != m.last_committed,
+        !m.in_flight() || t.last_leaf_epoch() != m.last_committed(),
         TimescalesError::InFlight,
     )?;
+    drop(t);
     close_account(trader_acc, owner)
 }
 
@@ -486,20 +523,20 @@ fn commit_batch(
     let market_acc = next_account_info(it)?;
     let batch_acc = next_account_info(it)?;
     let system = next_account_info(it)?;
-    let mut m = load_market(program_id, market_acc)?;
+    let mut m = load_market_mut(program_id, market_acc)?;
     require(
-        relay.is_signer && relay.key.to_bytes() == m.relay,
+        relay.is_signer && relay.key.as_array() == m.relay(),
         TimescalesError::Unauthorised,
     )?;
-    require(!m.halted, TimescalesError::Halted)?;
+    require(!m.halted(), TimescalesError::Halted)?;
     require(
-        m.last_committed.checked_add(1) == Some(epoch),
+        m.last_committed().checked_add(1) == Some(epoch),
         TimescalesError::OutOfOrder,
     )?;
     require(!m.in_flight(), TimescalesError::InFlight)?;
     let slot = current_slot()?;
     require(
-        !(governance::between_batches(m.pending.kind) && slot >= m.pending.eta_slot),
+        !(governance::between_batches(m.pending_kind()) && slot >= m.pending_eta_slot()),
         TimescalesError::ChangeDue,
     )?;
     require(
@@ -512,29 +549,21 @@ fn commit_batch(
     let seeds: [&[u8]; 3] = [b"batch", market_acc.key.as_ref(), &epoch_le];
     let bump = pda_bump(program_id, batch_acc, &seeds)?;
     init_pda(
-        program_id,
-        relay,
-        batch_acc,
-        system,
-        &seeds,
-        bump,
-        Batch::LEN,
+        program_id, relay, batch_acc, system, &seeds, bump, BATCH_LEN,
     )?;
     // SlotHashes is not read here: the beacon is fixed only after the root
     // and count are.
-    let b = Batch::committed(
-        bump,
-        market_acc.key.to_bytes(),
-        epoch,
-        *root,
-        count,
-        *terms_digest,
-        slot,
-    );
-    b.store(&mut batch_acc.try_borrow_mut_data()?)?;
-    m.last_committed = epoch;
-    m.last_progress_slot = slot;
-    store_market(market_acc, &m)
+    let mut b = Batch::init(exclusive(batch_acc)?, bump)?;
+    b.set_status(Status::Committed);
+    b.set_market(market_acc.key.as_array());
+    b.set_epoch(epoch);
+    b.set_root(root);
+    b.set_count(count);
+    b.set_terms_digest(terms_digest);
+    b.set_commit_slot(slot);
+    m.set_last_committed(epoch);
+    m.set_last_progress_slot(slot);
+    Ok(())
 }
 
 fn reveal_beacon(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
@@ -545,19 +574,22 @@ fn reveal_beacon(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult
     let hashes = next_account_info(it)?;
     require(cranker.is_signer, TimescalesError::Unauthorised)?;
     let m = load_market(program_id, market_acc)?;
-    let mut b = load_batch(program_id, market_acc.key, batch_acc)?;
+    let mut b = load_batch_mut(program_id, market_acc.key, batch_acc)?;
     require(
         *hashes.key == slot_hashes::ID,
         TimescalesError::InvalidAccount,
     )?;
-    require(b.status == Status::Committed, TimescalesError::WrongStatus)?;
-    let d = u64::from(m.beacon_delay_slots);
+    require(
+        b.status() == Status::Committed,
+        TimescalesError::WrongStatus,
+    )?;
+    let d = u64::from(m.beacon_delay_slots());
     let slot = current_slot()?;
     require(
-        slot <= b.commit_slot + d + REVEAL_WINDOW,
+        slot <= b.commit_slot() + d + REVEAL_WINDOW,
         TimescalesError::BeaconExpired,
     )?;
-    let (target_a, target_b) = (b.commit_slot + d, b.commit_slot + 2 * d);
+    let (target_a, target_b) = (b.commit_slot() + d, b.commit_slot() + 2 * d);
     let lookup = |target| -> Result<(u64, [u8; 32]), ProgramError> {
         match beacon::slot_hashes_entry(&hashes.try_borrow_data()?, target) {
             Lookup::Found(s, h) => Ok((s, h)),
@@ -567,19 +599,20 @@ fn reveal_beacon(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult
     };
     let entry_b = lookup(target_b)?;
     let entry_a = lookup(target_a)?;
-    b.beacon = beacon::beacon_v2(
-        &market_acc.key.to_bytes(),
-        b.epoch,
-        &b.root,
-        b.count,
+    let beacon = beacon::beacon_v2(
+        market_acc.key.as_array(),
+        b.epoch(),
+        b.root(),
+        b.count(),
         entry_a,
         entry_b,
     );
-    b.beacon_slot_a = entry_a.0;
-    b.beacon_slot_b = entry_b.0;
-    b.reveal_slot = slot;
-    b.status = Status::BeaconRevealed;
-    b.store(&mut batch_acc.try_borrow_mut_data()?)
+    b.set_beacon(&beacon);
+    b.set_beacon_slot_a(entry_a.0);
+    b.set_beacon_slot_b(entry_b.0);
+    b.set_reveal_slot(slot);
+    b.set_status(Status::BeaconRevealed);
+    Ok(())
 }
 
 /// What an Ed25519 precompile instruction verified.
@@ -674,13 +707,16 @@ fn post_receipt(
     let instructions = next_account_info(it)?;
     require(cranker.is_signer, TimescalesError::Unauthorised)?;
     let m = load_market(program_id, market_acc)?;
-    let mut b = load_batch(program_id, market_acc.key, batch_acc)?;
-    require(!m.halted, TimescalesError::Halted)?;
+    let mut b = load_batch_mut(program_id, market_acc.key, batch_acc)?;
+    require(!m.halted(), TimescalesError::Halted)?;
     require(
-        b.status == Status::BeaconRevealed,
+        b.status() == Status::BeaconRevealed,
         TimescalesError::WrongStatus,
     )?;
-    require(b.epoch == m.last_settled + 1, TimescalesError::OutOfOrder)?;
+    require(
+        b.epoch() == m.last_settled() + 1,
+        TimescalesError::OutOfOrder,
+    )?;
     require(
         header.len() == HEADER_LEN
             && header[0] == HEADER_VERSION
@@ -690,23 +726,23 @@ fn post_receipt(
 
     let h = header;
     require(
-        le_u64(&h[1..9]) == m.market_id && le_u64(&h[9..17]) == b.epoch,
+        le_u64(&h[1..9]) == m.market_id() && le_u64(&h[9..17]) == b.epoch(),
         TimescalesError::HeaderMismatch,
     )?;
-    require(h[17..63] == m.params, TimescalesError::ParamsMismatch)?;
+    require(h[17..63] == m.params()[..], TimescalesError::ParamsMismatch)?;
     require(
-        merkle::hash(EPOCH_TERMS, &[&h[63..119]]) == b.terms_digest,
+        merkle::hash(EPOCH_TERMS, &[&h[63..119]]) == *b.terms_digest(),
         TimescalesError::TermsMismatch,
     )?;
     require(
-        le_u32(&h[119..123]) == b.count
-            && h[123..155] == b.root
-            && h[155..187] == b.beacon
-            && h[251..283] == m.prev_receipt,
+        le_u32(&h[119..123]) == b.count()
+            && h[123..155] == b.root()[..]
+            && h[155..187] == b.beacon()[..]
+            && h[251..283] == m.prev_receipt()[..],
         TimescalesError::HeaderMismatch,
     )?;
     require(
-        h[187..219] == m.state_root,
+        h[187..219] == m.state_root()[..],
         TimescalesError::StateRootMismatch,
     )?;
     let header_digest = merkle::hash(BATCH_HEADER, &[h]);
@@ -714,8 +750,8 @@ fn post_receipt(
     let r = receipt;
     require(r.len() >= 53, TimescalesError::ReceiptMismatch)?;
     require(
-        le_u64(&r[1..9]) == m.market_id
-            && le_u64(&r[9..17]) == b.epoch
+        le_u64(&r[1..9]) == m.market_id()
+            && le_u64(&r[9..17]) == b.epoch()
             && r[17..49] == header_digest,
         TimescalesError::ReceiptMismatch,
     )?;
@@ -733,7 +769,7 @@ fn post_receipt(
     let executor = key_at(r, 198 + o);
     let (signed, signature) = r.split_at(326 + o);
     require(
-        settlement_count as usize <= MAX_DELTAS && settlement_count <= b.count,
+        settlement_count as usize <= MAX_DELTAS && settlement_count <= b.count(),
         TimescalesError::TooManyDeltas,
     )?;
     require(backend == BACKEND_TEE, TimescalesError::BackendNotAllowed)?;
@@ -747,29 +783,29 @@ fn post_receipt(
         TimescalesError::BadSignature,
     )?;
 
-    b.header_digest = header_digest;
-    b.receipt = digest;
-    b.outcome_digest = merkle::hash(OUTCOME, &[&r[1..197 + o]]);
-    b.next_state_root = next_state_root;
-    b.settlement_root = settlement_root;
-    b.settlement_count = settlement_count;
-    b.fees = fees;
-    b.receipt_slot = current_slot()?;
-    b.cosign_bitmap = 1 << poster;
-    b.cosign_count = 1;
-    b.status = Status::ReceiptPosted;
-    b.store(&mut batch_acc.try_borrow_mut_data()?)
+    b.set_header_digest(&header_digest);
+    b.set_receipt(&digest);
+    b.set_outcome_digest(&merkle::hash(OUTCOME, &[&r[1..197 + o]]));
+    b.set_next_state_root(&next_state_root);
+    b.set_settlement_root(&settlement_root);
+    b.set_settlement_count(settlement_count);
+    b.set_fees(fees);
+    b.set_receipt_slot(current_slot()?);
+    b.set_cosign_bitmap(1 << poster);
+    b.set_cosign_count(1);
+    b.set_status(Status::ReceiptPosted);
+    Ok(())
 }
 
 /// `H(RECEIPT_COSIGN, market32 || epoch || header_digest || outcome_digest)`.
-pub fn cosign_digest(market: &Pubkey, b: &Batch) -> [u8; 32] {
+pub fn cosign_digest<D: Deref<Target = [u8]>>(market: &Pubkey, b: &Batch<D>) -> [u8; 32] {
     merkle::hash(
         RECEIPT_COSIGN,
         &[
             market.as_ref(),
-            &b.epoch.to_le_bytes(),
-            &b.header_digest,
-            &b.outcome_digest,
+            &b.epoch().to_le_bytes(),
+            b.header_digest(),
+            b.outcome_digest(),
         ],
     )
 }
@@ -782,10 +818,10 @@ fn cosign_receipt(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResul
     let instructions = next_account_info(it)?;
     require(cranker.is_signer, TimescalesError::Unauthorised)?;
     let m = load_market(program_id, market_acc)?;
-    let mut b = load_batch(program_id, market_acc.key, batch_acc)?;
-    require(!m.halted, TimescalesError::Halted)?;
+    let mut b = load_batch_mut(program_id, market_acc.key, batch_acc)?;
+    require(!m.halted(), TimescalesError::Halted)?;
     require(
-        b.status == Status::ReceiptPosted,
+        b.status() == Status::ReceiptPosted,
         TimescalesError::WrongStatus,
     )?;
     let sig = preceding_ed25519(instructions)?;
@@ -793,23 +829,23 @@ fn cosign_receipt(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResul
         .executor_slot(&sig.pubkey)
         .ok_or(TimescalesError::UnknownExecutor)?;
     require(
-        b.cosign_bitmap & (1 << slot) == 0,
+        b.cosign_bitmap() & (1 << slot) == 0,
         TimescalesError::AlreadyCosigned,
     )?;
     require(
         sig.message == cosign_digest(market_acc.key, &b),
         TimescalesError::BadSignature,
     )?;
-    b.cosign_bitmap |= 1 << slot;
-    b.cosign_count = b.cosign_count.saturating_add(1);
-    b.store(&mut batch_acc.try_borrow_mut_data()?)
+    b.set_cosign_bitmap(b.cosign_bitmap() | (1 << slot));
+    b.set_cosign_count(b.cosign_count().saturating_add(1));
+    Ok(())
 }
 
-fn leaf_root(b: &Batch, leaf: &Leaf) -> Option<[u8; 32]> {
+fn leaf_root<D: Deref<Target = [u8]>>(b: &Batch<D>, leaf: &Leaf) -> Option<[u8; 32]> {
     merkle::root_from_path(
         merkle::leaf(&leaf.bytes()),
         u64::from(leaf.index),
-        u64::from(b.settlement_count),
+        u64::from(b.settlement_count()),
         leaf.path,
     )
 }
@@ -821,47 +857,49 @@ fn verify_deltas(program_id: &Pubkey, accounts: &[AccountInfo], leaves: &[Leaf])
     let batch_acc = next_account_info(it)?;
     require(cranker.is_signer, TimescalesError::Unauthorised)?;
     let m = load_market(program_id, market_acc)?;
-    let mut b = load_batch(program_id, market_acc.key, batch_acc)?;
-    require(!m.halted, TimescalesError::Halted)?;
+    let mut b = load_batch_mut(program_id, market_acc.key, batch_acc)?;
+    require(!m.halted(), TimescalesError::Halted)?;
     require(
-        b.status == Status::ReceiptPosted,
+        b.status() == Status::ReceiptPosted,
         TimescalesError::WrongStatus,
     )?;
     // No settlement leaf is processed before the quorum agrees.
-    require(m.quorum_met(b.cosign_bitmap), TimescalesError::QuorumNotMet)?;
+    require(
+        m.quorum_met(b.cosign_bitmap()),
+        TimescalesError::QuorumNotMet,
+    )?;
     for leaf in leaves {
         let trader_acc = next_account_info(it)?;
-        let mut t = load_trader(program_id, market_acc.key, trader_acc)?;
-        require(t.owner == *leaf.trader, TimescalesError::InvalidAccount)?;
-        require(leaf.index < b.settlement_count, TimescalesError::BadProof)?;
+        let mut t = load_trader_mut(program_id, market_acc.key, trader_acc)?;
+        require(t.owner() == leaf.trader, TimescalesError::InvalidAccount)?;
+        require(leaf.index < b.settlement_count(), TimescalesError::BadProof)?;
         require(
-            !Batch::test_and_set(&mut b.verified, leaf.index),
+            !b.test_and_set_verified(leaf.index),
             TimescalesError::DuplicateLeaf,
         )?;
         require(
-            t.last_leaf_epoch != b.epoch,
+            t.last_leaf_epoch() != b.epoch(),
             TimescalesError::DuplicateTrader,
         )?;
         require(
-            leaf_root(&b, leaf) == Some(b.settlement_root),
+            leaf_root(&b, leaf).as_ref() == Some(b.settlement_root()),
             TimescalesError::BadProof,
         )?;
-        let (res_base, res_quote) = t.reserved(b.epoch);
+        let (res_base, res_quote) = t.reserved(b.epoch());
         for (balance, delta, reserved) in [
-            (t.base, leaf.base, res_base),
-            (t.quote, leaf.quote, res_quote),
+            (t.base(), leaf.base, res_base),
+            (t.quote(), leaf.quote, res_quote),
         ] {
             let after = i128::from(balance) + i128::from(delta);
             require(after >= i128::from(reserved), TimescalesError::Insolvent)?;
             require(after <= i128::from(u64::MAX), TimescalesError::Overflow)?;
         }
-        b.verified_count += 1;
-        b.sum_base += i128::from(leaf.base);
-        b.sum_quote += i128::from(leaf.quote);
-        t.last_leaf_epoch = b.epoch;
-        t.store(&mut trader_acc.try_borrow_mut_data()?)?;
+        b.set_verified_count(b.verified_count() + 1);
+        b.set_sum_base(b.sum_base() + i128::from(leaf.base));
+        b.set_sum_quote(b.sum_quote() + i128::from(leaf.quote));
+        t.set_last_leaf_epoch(b.epoch());
     }
-    b.store(&mut batch_acc.try_borrow_mut_data()?)
+    Ok(())
 }
 
 fn finalize(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
@@ -871,25 +909,28 @@ fn finalize(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
     let batch_acc = next_account_info(it)?;
     require(cranker.is_signer, TimescalesError::Unauthorised)?;
     let m = load_market(program_id, market_acc)?;
-    let mut b = load_batch(program_id, market_acc.key, batch_acc)?;
-    require(!m.halted, TimescalesError::Halted)?;
+    let mut b = load_batch_mut(program_id, market_acc.key, batch_acc)?;
+    require(!m.halted(), TimescalesError::Halted)?;
     require(
-        b.status == Status::ReceiptPosted,
+        b.status() == Status::ReceiptPosted,
         TimescalesError::WrongStatus,
     )?;
     require(
-        b.verified_count == b.settlement_count,
+        b.verified_count() == b.settlement_count(),
         TimescalesError::Incomplete,
     )?;
     // sum(inputs) == sum(outputs) + fees
     require(
-        b.sum_base == 0 && b.sum_quote + i128::from(b.fees) == 0,
+        b.sum_base() == 0 && b.sum_quote() + i128::from(b.fees()) == 0,
         TimescalesError::NotConserved,
     )?;
     // A removed executor's signature stops counting.
-    require(m.quorum_met(b.cosign_bitmap), TimescalesError::QuorumNotMet)?;
-    b.status = Status::Verified;
-    b.store(&mut batch_acc.try_borrow_mut_data()?)
+    require(
+        m.quorum_met(b.cosign_bitmap()),
+        TimescalesError::QuorumNotMet,
+    )?;
+    b.set_status(Status::Verified);
+    Ok(())
 }
 
 /// After `FinalizeVerification` every leaf applies (available never
@@ -902,39 +943,42 @@ fn apply_deltas(program_id: &Pubkey, accounts: &[AccountInfo], leaves: &[Leaf]) 
     let batch_acc = next_account_info(it)?;
     require(cranker.is_signer, TimescalesError::Unauthorised)?;
     let m = load_market(program_id, market_acc)?;
-    let mut b = load_batch(program_id, market_acc.key, batch_acc)?;
-    require(b.status == Status::Verified, TimescalesError::WrongStatus)?;
+    let mut b = load_batch_mut(program_id, market_acc.key, batch_acc)?;
+    require(b.status() == Status::Verified, TimescalesError::WrongStatus)?;
     // A halt never strands a half-applied batch.
-    require(!m.halted || b.applied_count > 0, TimescalesError::Halted)?;
+    require(
+        !m.halted() || b.applied_count() > 0,
+        TimescalesError::Halted,
+    )?;
     let slot = current_slot()?;
     for leaf in leaves {
         let trader_acc = next_account_info(it)?;
-        let mut t = load_trader(program_id, market_acc.key, trader_acc)?;
+        let mut t = load_trader_mut(program_id, market_acc.key, trader_acc)?;
         require(
-            t.owner == *leaf.trader && t.last_leaf_epoch == b.epoch,
+            t.owner() == leaf.trader && t.last_leaf_epoch() == b.epoch(),
             TimescalesError::InvalidAccount,
         )?;
         require(
-            leaf.index < b.settlement_count && leaf_root(&b, leaf) == Some(b.settlement_root),
+            leaf.index < b.settlement_count()
+                && leaf_root(&b, leaf).as_ref() == Some(b.settlement_root()),
             TimescalesError::BadProof,
         )?;
         require(
-            !Batch::test_and_set(&mut b.applied, leaf.index),
+            !b.test_and_set_applied(leaf.index),
             TimescalesError::DuplicateLeaf,
         )?;
-        let base = i128::from(t.base) + i128::from(leaf.base);
-        let quote = i128::from(t.quote) + i128::from(leaf.quote);
+        let base = i128::from(t.base()) + i128::from(leaf.base);
+        let quote = i128::from(t.quote()) + i128::from(leaf.quote);
         require(base >= 0 && quote >= 0, TimescalesError::Insolvent)?;
         let base = u64::try_from(base).map_err(|_| TimescalesError::Overflow)?;
         let quote = u64::try_from(quote).map_err(|_| TimescalesError::Overflow)?;
         t.capture_floor(&m);
-        t.base = base;
-        t.quote = quote;
-        t.last_change_slot = slot;
-        t.store(&mut trader_acc.try_borrow_mut_data()?)?;
-        b.applied_count += 1;
+        t.set_base(base);
+        t.set_quote(quote);
+        t.set_last_change_slot(slot);
+        b.set_applied_count(b.applied_count() + 1);
     }
-    b.store(&mut batch_acc.try_borrow_mut_data()?)
+    Ok(())
 }
 
 fn close_batch(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
@@ -943,24 +987,24 @@ fn close_batch(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
     let market_acc = next_account_info(it)?;
     let batch_acc = next_account_info(it)?;
     require(cranker.is_signer, TimescalesError::Unauthorised)?;
-    let mut m = load_market(program_id, market_acc)?;
-    let mut b = load_batch(program_id, market_acc.key, batch_acc)?;
-    require(b.status == Status::Verified, TimescalesError::WrongStatus)?;
+    let mut m = load_market_mut(program_id, market_acc)?;
+    let mut b = load_batch_mut(program_id, market_acc.key, batch_acc)?;
+    require(b.status() == Status::Verified, TimescalesError::WrongStatus)?;
     require(
-        b.applied_count == b.settlement_count,
+        b.applied_count() == b.settlement_count(),
         TimescalesError::Incomplete,
     )?;
-    b.status = Status::Settled;
-    b.store(&mut batch_acc.try_borrow_mut_data()?)?;
-    m.fees_accrued = m
-        .fees_accrued
-        .checked_add(b.fees)
+    b.set_status(Status::Settled);
+    let accrued = m
+        .fees_accrued()
+        .checked_add(b.fees())
         .ok_or(TimescalesError::Overflow)?;
-    m.last_settled = b.epoch;
-    m.prev_receipt = b.receipt;
-    m.state_root = b.next_state_root;
-    m.last_progress_slot = current_slot()?;
-    store_market(market_acc, &m)
+    m.set_fees_accrued(accrued);
+    m.set_last_settled(b.epoch());
+    m.set_prev_receipt(b.receipt());
+    m.set_state_root(b.next_state_root());
+    m.set_last_progress_slot(current_slot()?);
+    Ok(())
 }
 
 /// The abort matrix. Every timer starts at an event of this batch,
@@ -971,64 +1015,72 @@ fn abort_batch(program_id: &Pubkey, accounts: &[AccountInfo], reason: u8) -> Pro
     let market_acc = next_account_info(it)?;
     let batch_acc = next_account_info(it)?;
     require(signer.is_signer, TimescalesError::Unauthorised)?;
-    let mut m = load_market(program_id, market_acc)?;
-    let mut b = load_batch(program_id, market_acc.key, batch_acc)?;
-    require(b.epoch == m.last_settled + 1, TimescalesError::OutOfOrder)?;
-    require(b.applied_count == 0, TimescalesError::WrongStatus)?;
+    let mut m = load_market_mut(program_id, market_acc)?;
+    let mut b = load_batch_mut(program_id, market_acc.key, batch_acc)?;
+    require(
+        b.epoch() == m.last_settled() + 1,
+        TimescalesError::OutOfOrder,
+    )?;
+    require(b.applied_count() == 0, TimescalesError::WrongStatus)?;
     require(
         matches!(
-            b.status,
+            b.status(),
             Status::Committed | Status::BeaconRevealed | Status::ReceiptPosted | Status::Verified
         ),
         TimescalesError::WrongStatus,
     )?;
     let reason = AbortReason::from_u8(reason).ok_or(TimescalesError::InvalidAbortReason)?;
     let slot = current_slot()?;
-    let signer_key = signer.key.to_bytes();
-    let d = u64::from(m.beacon_delay_slots);
+    let signer_key = signer.key.as_array();
+    let d = u64::from(m.beacon_delay_slots());
     let expired = |deadline: u64| require(slot > deadline, TimescalesError::NotExpired);
     match reason {
-        AbortReason::Admin => require(signer_key == m.admin, TimescalesError::Unauthorised)?,
+        AbortReason::Admin => require(signer_key == m.admin(), TimescalesError::Unauthorised)?,
         AbortReason::Relay => {
-            require(signer_key == m.relay, TimescalesError::Unauthorised)?;
-            require(b.status == Status::Committed, TimescalesError::WrongStatus)?;
+            require(signer_key == m.relay(), TimescalesError::Unauthorised)?;
+            require(
+                b.status() == Status::Committed,
+                TimescalesError::WrongStatus,
+            )?;
             // Only before either beacon input exists: the relay never gets
             // to choose an outcome after seeing the beacon.
-            require(slot < b.commit_slot + d, TimescalesError::Unauthorised)?;
+            require(slot < b.commit_slot() + d, TimescalesError::Unauthorised)?;
         }
         AbortReason::BeaconExpired => {
-            require(b.status == Status::Committed, TimescalesError::WrongStatus)?;
-            expired(b.commit_slot + d + REVEAL_WINDOW)?;
+            require(
+                b.status() == Status::Committed,
+                TimescalesError::WrongStatus,
+            )?;
+            expired(b.commit_slot() + d + REVEAL_WINDOW)?;
         }
         AbortReason::ExecTimeout => {
             require(
-                b.status == Status::BeaconRevealed,
+                b.status() == Status::BeaconRevealed,
                 TimescalesError::WrongStatus,
             )?;
-            expired(b.reveal_slot + m.exec_timeout_slots)?;
+            expired(b.reveal_slot() + m.exec_timeout_slots())?;
         }
         AbortReason::SettleTimeout => {
             require(
-                matches!(b.status, Status::ReceiptPosted | Status::Verified),
+                matches!(b.status(), Status::ReceiptPosted | Status::Verified),
                 TimescalesError::WrongStatus,
             )?;
-            expired(b.receipt_slot + m.settle_timeout_slots)?;
+            expired(b.receipt_slot() + m.settle_timeout_slots())?;
         }
         AbortReason::QuorumTimeout => {
             // A receipt that reached its quorum is not in this state.
             require(
-                b.status == Status::ReceiptPosted && !m.quorum_met(b.cosign_bitmap),
+                b.status() == Status::ReceiptPosted && !m.quorum_met(b.cosign_bitmap()),
                 TimescalesError::WrongStatus,
             )?;
-            expired(b.receipt_slot + m.exec_timeout_slots)?;
+            expired(b.receipt_slot() + m.exec_timeout_slots())?;
         }
     }
-    b.status = Status::Aborted;
-    b.abort_reason = reason as u8;
-    b.store(&mut batch_acc.try_borrow_mut_data()?)?;
-    m.last_settled = b.epoch;
-    m.last_progress_slot = slot;
-    store_market(market_acc, &m)
+    b.set_status(Status::Aborted);
+    b.set_abort_reason(reason as u8);
+    m.set_last_settled(b.epoch());
+    m.set_last_progress_slot(slot);
+    Ok(())
 }
 
 fn reclaim_batch(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
@@ -1041,17 +1093,18 @@ fn reclaim_batch(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult
     let m = load_market(program_id, market_acc)?;
     let b = load_batch(program_id, market_acc.key, batch_acc)?;
     require(
-        relay.key.to_bytes() == m.relay,
+        relay.key.as_array() == m.relay(),
         TimescalesError::InvalidAccount,
     )?;
     require(
-        matches!(b.status, Status::Settled | Status::Aborted),
+        matches!(b.status(), Status::Settled | Status::Aborted),
         TimescalesError::WrongStatus,
     )?;
     require(
-        b.epoch.saturating_add(BATCH_RETENTION) <= m.last_settled,
+        b.epoch().saturating_add(BATCH_RETENTION) <= m.last_settled(),
         TimescalesError::RetentionNotReached,
     )?;
+    drop(b);
     close_account(batch_acc, relay)
 }
 
